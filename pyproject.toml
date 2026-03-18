@@ -1,0 +1,14 @@
+[project]
+name = "private-note"
+version = "0.1.0"
+description = "Local RAG note system"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "chromadb>=0.4",
+    "pydantic>=2",
+]
+
+[tool.uv]
+dev-dependencies = []

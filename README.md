@@ -8,6 +8,14 @@
 uv sync
 ```
 
+### 安装 Just（可选）
+
+如果要使用 `just start/stop/restart` 命令，需要先安装 Just。
+
+```bash
+winget install --id Casey.Just --source winget
+```
+
 ### 启动服务
 
 ```bash
@@ -19,6 +27,14 @@ uv run uvicorn main:app --host 127.0.0.1 --port 8002
 ### 刷新服务
 
 在运行的终端按 `Ctrl + C` 退出后，重新执行启动命令即可刷新服务。
+
+### 一键停止 / 重启（Just）
+
+```bash
+just start
+just stop
+just restart
+```
 
 ## 常用指令
 

@@ -71,16 +71,23 @@ def chat(payload: ChatRequest) -> ChatResponse:
     query_embedding = embed_text(payload.question)
     chunks = query_chunks(query_embedding, top_k=4, similarity_threshold=0.75)
     context = "\n\n".join(chunks)
-    prompt = (
-        "你是一个基于用户笔记的助手\n"
-        "请严格根据以下内容回答问题，不要编造：\n"
-        f"{context}\n"
-        "问题：\n"
-        f"{payload.question}\n"
-        "规则：\n"
-        "只能使用提供的内容回答\n"
-        "如果内容不足，请回答：未找到相关信息\n"
-        "回答要简洁清晰"
-    )
+    prompt = f"""
+你是一个严格基于用户笔记回答问题的助手。
+
+【已知信息】
+{context}
+
+【用户问题】
+{payload.question}
+
+【回答规则】
+1. 只能使用【已知信息】中的内容回答
+2. 不允许使用任何外部知识或自行推断
+3. 如果【已知信息】中没有明确答案，必须回答：未找到相关信息
+4. 优先保证答案准确，而不是完整
+5. 回答要简洁、结构清晰
+
+请开始回答：
+"""
     answer = generate_text(prompt)
     return ChatResponse(answer=answer, model=OLLAMA_LLM_MODEL)

@@ -76,6 +76,19 @@
         padding: 20px 16px;
         font-size: 18px;
         font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .add-note {
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text);
+        border-radius: 8px;
+        padding: 4px 8px;
+        font-size: 12px;
+        cursor: pointer;
       }
       .notes {
         overflow: auto;
@@ -92,10 +105,16 @@
         font-size: 13px;
         color: var(--muted);
         line-height: 1.4;
-        white-space: pre-wrap;
         display: flex;
         flex-direction: column;
         gap: 10px;
+      }
+      .note-preview {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        white-space: pre-wrap;
       }
       .note-meta {
         font-size: 11px;
@@ -140,7 +159,7 @@
       }
       .modal-card {
         width: 360px;
-        background: #0b1220;
+        background: var(--panel);
         border: 1px solid var(--border);
         border-radius: 12px;
         padding: 18px;
@@ -191,6 +210,11 @@
         justify-content: space-between;
         gap: 12px;
       }
+      .header-actions {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+      }
       .theme-toggle {
         border: 1px solid var(--border);
         background: transparent;
@@ -206,6 +230,25 @@
         justify-content: center;
       }
       .theme-toggle svg {
+        width: 18px;
+        height: 18px;
+        display: block;
+      }
+      .trash-toggle {
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text);
+        border-radius: 10px;
+        padding: 6px 10px;
+        cursor: pointer;
+        font-size: 14px;
+        width: 34px;
+        height: 34px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .trash-toggle svg {
         width: 18px;
         height: 18px;
         display: block;
@@ -256,9 +299,10 @@
         gap: 12px;
         background: var(--panel);
         min-height: 120px;
+        align-items: stretch;
       }
       .divider-horizontal {
-        height: 6px;
+        height: 10px;
         cursor: row-resize;
         background: transparent;
       }
@@ -278,49 +322,87 @@
         color: var(--text);
         padding: 12px;
         font-size: 14px;
+        height: 100%;
       }
       .composer button {
-        background: var(--accent);
+        background: #2563eb;
         border: none;
-        color: #0b0f14;
+        color: #f8fafc;
         font-weight: 600;
-        padding: 0 20px;
+        padding: 0 16px;
         border-radius: 10px;
         cursor: pointer;
+        width: 48px;
+        height: 48px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
       }
-      .note-panel {
+      .composer button svg {
+        width: 18px;
+        height: 18px;
+        display: block;
+      }
+      .editor-overlay {
+        position: fixed;
+        inset: 0;
+        background: var(--bg);
+        display: flex;
+        flex-direction: column;
+        z-index: 30;
+      }
+      .editor-overlay.hidden {
+        display: none;
+      }
+      .editor-header {
         padding: 16px 24px;
         border-bottom: 1px solid var(--border);
-        background: var(--panel-2);
-        display: grid;
-        grid-template-columns: 1fr auto auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
         gap: 12px;
-        min-height: 120px;
       }
-      .note-panel textarea {
+      .editor-title {
+        font-size: 16px;
+        font-weight: 600;
+      }
+      .editor-actions {
+        display: flex;
+        gap: 10px;
+      }
+      .editor-actions button {
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text);
+        padding: 8px 16px;
+        cursor: pointer;
+      }
+      .editor-actions button.primary {
+        background: #2563eb;
+        border-color: #2563eb;
+        color: #f8fafc;
+      }
+      .editor-actions button.danger {
+        background: #dc2626;
+        border-color: #dc2626;
+        color: #fef2f2;
+      }
+      .editor-body {
+        flex: 1;
+        padding: 24px;
+      }
+      .editor-body textarea {
         width: 100%;
-        min-height: 70px;
+        height: 100%;
         resize: none;
         background: var(--input-bg);
         border: 1px solid var(--border);
-        border-radius: 10px;
+        border-radius: 12px;
         color: var(--text);
-        padding: 12px;
-        font-size: 14px;
-      }
-      .note-panel button {
-        background: #2563eb;
-        border: none;
-        color: #e5e7eb;
-        font-weight: 600;
-        padding: 0 20px;
-        border-radius: 10px;
-        cursor: pointer;
-      }
-      .note-panel button.cancel {
-        background: #dc2626;
-        border: 1px solid #dc2626;
-        color: #fef2f2;
+        padding: 16px;
+        font-size: 15px;
+        line-height: 1.6;
       }
       .status {
         position: fixed;
@@ -356,33 +438,67 @@
   <body>
     <div class="layout">
       <aside class="sidebar">
-        <div class="sidebar-header">我的笔记</div>
+        <div class="sidebar-header">
+          <span>我的笔记</span>
+          <button class="add-note" id="addNote">新增</button>
+        </div>
         <div class="notes" id="notesList"></div>
       </aside>
       <div class="divider-vertical" id="sidebarDivider"></div>
       <main class="main">
         <div class="chat-header">
           <span>基于笔记的问答</span>
-          <button class="theme-toggle" id="themeToggle" aria-label="切换模式">
-            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 14.5a8.5 8.5 0 1 1-10-10 7 7 0 0 0 10 10z"></path>
-            </svg>
-          </button>
+          <div class="header-actions">
+            <button class="trash-toggle" id="chatClear" aria-label="清空聊天记录">
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 6h18"></path>
+                <path d="M8 6V4h8v2"></path>
+                <path d="M6 6l1 14h10l1-14"></path>
+              </svg>
+            </button>
+            <button class="theme-toggle" id="themeToggle" aria-label="切换模式">
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 14.5a8.5 8.5 0 1 1-10-10 7 7 0 0 0 10 10z"></path>
+              </svg>
+            </button>
+          </div>
         </div>
-        <section class="note-panel">
-          <textarea id="noteInput" placeholder="输入笔记内容，保存后会自动向量化"></textarea>
-          <button id="saveNote">保存笔记</button>
-          <button id="cancelEdit" class="cancel">清空</button>
-        </section>
-        <div class="divider-horizontal" id="noteDivider"></div>
         <div class="status hidden" id="statusText"></div>
         <section class="chat-body" id="chatBody"></section>
         <div class="divider-horizontal" id="composerDivider"></div>
         <section class="composer">
           <textarea id="questionInput" placeholder="输入问题，基于笔记回答"></textarea>
-          <button id="sendQuestion">发送</button>
+          <button id="sendQuestion" aria-label="发送">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 19V5"></path>
+              <path d="M5 12l7-7 7 7"></path>
+            </svg>
+          </button>
         </section>
       </main>
+    </div>
+    <div class="editor-overlay hidden" id="editorOverlay">
+      <div class="editor-header">
+        <div class="editor-title" id="editorTitle">新增笔记</div>
+        <div class="editor-actions">
+          <button id="editorBack">返回</button>
+          <button class="danger" id="editorClear">清空</button>
+          <button class="primary" id="editorSave">保存</button>
+        </div>
+      </div>
+      <div class="editor-body">
+        <textarea id="editorInput" placeholder="输入笔记内容，保存后会自动向量化"></textarea>
+      </div>
+    </div>
+    <div class="modal hidden" id="clearModal">
+      <div class="modal-card">
+        <div class="modal-title">确认清空</div>
+        <div class="modal-text">确定要清空当前输入内容吗？</div>
+        <div class="modal-actions">
+          <button id="clearCancel">取消</button>
+          <button class="danger" id="clearConfirm">清空</button>
+        </div>
+      </div>
     </div>
     <div class="modal hidden" id="confirmModal">
       <div class="modal-card">
@@ -394,26 +510,45 @@
         </div>
       </div>
     </div>
+    <div class="modal hidden" id="chatClearModal">
+      <div class="modal-card">
+        <div class="modal-title">确认清空聊天记录</div>
+        <div class="modal-text">确定要清空当前聊天记录吗？</div>
+        <div class="modal-actions">
+          <button id="chatClearCancel">取消</button>
+          <button class="danger" id="chatClearConfirm">清空</button>
+        </div>
+      </div>
+    </div>
     <script>
       const notesList = document.getElementById("notesList");
-      const noteInput = document.getElementById("noteInput");
-      const saveNote = document.getElementById("saveNote");
-      const cancelEdit = document.getElementById("cancelEdit");
+      const addNote = document.getElementById("addNote");
       const chatBody = document.getElementById("chatBody");
       const questionInput = document.getElementById("questionInput");
       const sendQuestion = document.getElementById("sendQuestion");
       const statusText = document.getElementById("statusText");
       const themeToggle = document.getElementById("themeToggle");
+      const chatClear = document.getElementById("chatClear");
       const confirmModal = document.getElementById("confirmModal");
       const confirmText = document.getElementById("confirmText");
       const confirmCancel = document.getElementById("confirmCancel");
       const confirmDelete = document.getElementById("confirmDelete");
+      const editorOverlay = document.getElementById("editorOverlay");
+      const editorTitle = document.getElementById("editorTitle");
+      const editorInput = document.getElementById("editorInput");
+      const editorSave = document.getElementById("editorSave");
+      const editorClear = document.getElementById("editorClear");
+      const editorBack = document.getElementById("editorBack");
+      const clearModal = document.getElementById("clearModal");
+      const clearCancel = document.getElementById("clearCancel");
+      const clearConfirm = document.getElementById("clearConfirm");
+      const chatClearModal = document.getElementById("chatClearModal");
+      const chatClearCancel = document.getElementById("chatClearCancel");
+      const chatClearConfirm = document.getElementById("chatClearConfirm");
       const layout = document.querySelector(".layout");
       const sidebar = document.querySelector(".sidebar");
       const sidebarDivider = document.getElementById("sidebarDivider");
-      const notePanel = document.querySelector(".note-panel");
       const composer = document.querySelector(".composer");
-      const noteDivider = document.getElementById("noteDivider");
       const composerDivider = document.getElementById("composerDivider");
       let editingId = null;
       let pendingDeleteId = null;
@@ -532,6 +667,7 @@
           const item = document.createElement("div");
           item.className = "note-item";
           const content = document.createElement("div");
+          content.className = "note-preview";
           content.textContent = note.content;
           const meta = document.createElement("div");
           meta.className = "note-meta";
@@ -543,8 +679,9 @@
           editBtn.textContent = "编辑";
           editBtn.addEventListener("click", () => {
             editingId = note.id;
-            noteInput.value = note.content;
-            saveNote.textContent = "更新笔记";
+            editorInput.value = note.content;
+            editorTitle.textContent = `编辑笔记 #${note.id}`;
+            editorOverlay.classList.remove("hidden");
             const updatedAt = formatTime(note.created_at);
             setStatus(`正在编辑 #${note.id} · 上次修改 ${updatedAt || "未知"}`);
             document.querySelectorAll(".note-item").forEach((el) => el.classList.remove("active"));
@@ -568,8 +705,19 @@
         });
       };
 
-      saveNote.addEventListener("click", async () => {
-        const content = noteInput.value.trim();
+      const openNewEditor = () => {
+        editingId = null;
+        editorTitle.textContent = "新增笔记";
+        editorInput.value = "";
+        editorOverlay.classList.remove("hidden");
+      };
+
+      addNote.addEventListener("click", () => {
+        openNewEditor();
+      });
+
+      editorSave.addEventListener("click", async () => {
+        const content = editorInput.value.trim();
         if (!content) {
           setStatus("请输入笔记内容");
           return;
@@ -583,23 +731,55 @@
           body: JSON.stringify({ content }),
         });
         if (res.ok) {
-          noteInput.value = "";
           editingId = null;
-          saveNote.textContent = "保存笔记";
           setStatus("笔记已保存");
           document.querySelectorAll(".note-item").forEach((el) => el.classList.remove("active"));
+          editorOverlay.classList.add("hidden");
           await loadNotes();
         } else {
           setStatus("写入失败，请检查 Ollama 服务");
         }
       });
 
-      cancelEdit.addEventListener("click", () => {
-        editingId = null;
-        noteInput.value = "";
-        saveNote.textContent = "保存笔记";
-        setStatus("");
-        document.querySelectorAll(".note-item").forEach((el) => el.classList.remove("active"));
+      editorBack.addEventListener("click", () => {
+        editorOverlay.classList.add("hidden");
+      });
+
+      editorClear.addEventListener("click", () => {
+        clearModal.classList.remove("hidden");
+      });
+
+      clearCancel.addEventListener("click", () => {
+        clearModal.classList.add("hidden");
+      });
+
+      clearModal.addEventListener("click", (event) => {
+        if (event.target === clearModal) {
+          clearModal.classList.add("hidden");
+        }
+      });
+
+      clearConfirm.addEventListener("click", () => {
+        editorInput.value = "";
+        clearModal.classList.add("hidden");
+      });
+      chatClear.addEventListener("click", () => {
+        chatClearModal.classList.remove("hidden");
+      });
+      chatClearCancel.addEventListener("click", () => {
+        chatClearModal.classList.add("hidden");
+      });
+      chatClearModal.addEventListener("click", (event) => {
+        if (event.target === chatClearModal) {
+          chatClearModal.classList.add("hidden");
+        }
+      });
+      chatClearConfirm.addEventListener("click", () => {
+        localStorage.removeItem(chatStorageKey);
+        localStorage.removeItem(legacyChatKey);
+        renderChat();
+        chatClearModal.classList.add("hidden");
+        setStatus("聊天记录已清空");
       });
       themeToggle.addEventListener("click", () => {
         const next = document.body.dataset.theme === "light" ? "dark" : "light";
@@ -638,6 +818,7 @@
           const delta = event.clientY - startY;
           const next = Math.max(minHeight, startHeight + delta);
           target.style.height = `${next}px`;
+          target.style.flex = "none";
         };
         const onUp = () => {
           divider.classList.remove("active");
@@ -674,8 +855,7 @@
         if (res.ok) {
           if (editingId === pendingDeleteId) {
             editingId = null;
-            noteInput.value = "";
-            saveNote.textContent = "保存笔记";
+            editorOverlay.classList.add("hidden");
             document.querySelectorAll(".note-item").forEach((el) => el.classList.remove("active"));
           }
           await loadNotes();
@@ -719,8 +899,7 @@
       loadNotes();
       renderChat();
       attachVerticalResize();
-      attachHorizontalResize(noteDivider, notePanel, 120);
-      attachHorizontalResize(composerDivider, composer, 120);
+      attachHorizontalResize(composerDivider, chatBody, 160);
     </script>
   </body>
 </html>

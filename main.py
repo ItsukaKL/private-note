@@ -6,8 +6,8 @@ from fastapi.staticfiles import StaticFiles
 
 from chroma_store import add_chunks, delete_note_chunks, get_collection, query_chunks
 from db import delete_note, get_note, init_db, insert_note, list_notes, update_note
-from ollama_client import OLLAMA_LLM_MODEL, embed_text, generate_text
-from schemas import ChatRequest, ChatResponse, NoteCreate, NoteItem, NoteOut, NoteUpdate
+from ollama_client import embed_text, generate_text, get_llm_model, init_runtime_settings, list_chat_models, set_llm_model
+from schemas import ChatRequest, ChatResponse, ModelOption, ModelSettings, ModelUpdate, NoteCreate, NoteItem, NoteOut, NoteUpdate
 from text_splitter import split_text
 
 
@@ -20,11 +20,33 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 def startup() -> None:
     init_db()
     get_collection()
+    init_runtime_settings()
 
 
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(static_dir / "index.html")
+
+
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/settings/model", response_model=ModelSettings)
+def get_model_settings() -> ModelSettings:
+    available_models = [ModelOption(name=name) for name in list_chat_models()]
+    return ModelSettings(current_model=get_llm_model(), available_models=available_models)
+
+
+@app.put("/settings/model", response_model=ModelSettings)
+def update_model_settings(payload: ModelUpdate) -> ModelSettings:
+    try:
+        current_model = set_llm_model(payload.model)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    available_models = [ModelOption(name=name) for name in list_chat_models()]
+    return ModelSettings(current_model=current_model, available_models=available_models)
 
 
 @app.post("/note", response_model=NoteOut)
@@ -88,6 +110,6 @@ def chat(payload: ChatRequest) -> ChatResponse:
 5. 回答要简洁、结构清晰
 
 请开始回答：
-"""
+    """
     answer = generate_text(prompt)
-    return ChatResponse(answer=answer, model=OLLAMA_LLM_MODEL)
+    return ChatResponse(answer=answer, model=get_llm_model())

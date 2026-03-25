@@ -253,6 +253,25 @@
         height: 18px;
         display: block;
       }
+      .settings-toggle {
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text);
+        border-radius: 10px;
+        padding: 6px 10px;
+        cursor: pointer;
+        font-size: 14px;
+        width: 34px;
+        height: 34px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .settings-toggle svg {
+        width: 18px;
+        height: 18px;
+        display: block;
+      }
       .chat-body {
         flex: 1;
         overflow: auto;
@@ -404,6 +423,91 @@
         font-size: 15px;
         line-height: 1.6;
       }
+      .settings-overlay {
+        position: fixed;
+        inset: 0;
+        background: var(--bg);
+        display: flex;
+        flex-direction: column;
+        z-index: 35;
+      }
+      .settings-overlay.hidden {
+        display: none;
+      }
+      .settings-header {
+        padding: 16px 24px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .settings-title {
+        font-size: 16px;
+        font-weight: 600;
+      }
+      .settings-actions {
+        display: flex;
+        gap: 10px;
+      }
+      .settings-actions button {
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text);
+        padding: 8px 16px;
+        cursor: pointer;
+      }
+      .settings-body {
+        flex: 1;
+        padding: 24px;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+      }
+      .settings-card {
+        width: min(560px, 100%);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+      .settings-card h2 {
+        margin: 0;
+        font-size: 20px;
+      }
+      .settings-copy {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .settings-row {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .settings-label {
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .settings-hint {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .settings-select {
+        width: 100%;
+        min-height: 44px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--input-bg);
+        color: var(--text);
+        padding: 10px 12px;
+        font-size: 14px;
+      }
       .status {
         position: fixed;
         left: 16px;
@@ -461,6 +565,12 @@
                 <path d="M21 14.5a8.5 8.5 0 1 1-10-10 7 7 0 0 0 10 10z"></path>
               </svg>
             </button>
+            <button class="settings-toggle" id="settingsToggle" aria-label="打开设置">
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-.4-1.1 1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.8a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.1-.4 1.7 1.7 0 0 0 .6-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6c.38-.12.73-.33 1-.6.26-.28.4-.64.4-1.1V2.8a2 2 0 1 1 4 0v.1c0 .46.14.82.4 1.1.27.27.62.48 1 .6a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.12.38.33.73.6 1 .28.26.64.4 1.1.4h.1a2 2 0 1 1 0 4h-.1c-.46 0-.82.14-1.1.4-.27.27-.48.62-.6 1z"></path>
+              </svg>
+            </button>
           </div>
         </div>
         <div class="status hidden" id="statusText"></div>
@@ -481,13 +591,32 @@
       <div class="editor-header">
         <div class="editor-title" id="editorTitle">新增笔记</div>
         <div class="editor-actions">
-          <button id="editorBack">返回</button>
           <button class="danger" id="editorClear">清空</button>
           <button class="primary" id="editorSave">保存</button>
+          <button id="editorBack">返回</button>
         </div>
       </div>
       <div class="editor-body">
         <textarea id="editorInput" placeholder="输入笔记内容，保存后会自动向量化"></textarea>
+      </div>
+    </div>
+    <div class="settings-overlay hidden" id="settingsOverlay">
+      <div class="settings-header">
+        <div class="settings-title">设置</div>
+        <div class="settings-actions">
+          <button id="settingsBack">返回</button>
+        </div>
+      </div>
+      <div class="settings-body">
+        <div class="settings-card">
+          <h2>模型设置</h2>
+          <div class="settings-copy">这里的设置是热重载的。切换后，下一次提问会立即使用新的对话模型。</div>
+          <div class="settings-row">
+            <label class="settings-label" for="modelSelect">对话模型</label>
+            <select class="settings-select" id="modelSelect"></select>
+            <div class="settings-hint" id="modelHint">列表来自当前 Ollama 已安装模型。</div>
+          </div>
+        </div>
       </div>
     </div>
     <div class="modal hidden" id="clearModal">
@@ -528,6 +657,7 @@
       const sendQuestion = document.getElementById("sendQuestion");
       const statusText = document.getElementById("statusText");
       const themeToggle = document.getElementById("themeToggle");
+      const settingsToggle = document.getElementById("settingsToggle");
       const chatClear = document.getElementById("chatClear");
       const confirmModal = document.getElementById("confirmModal");
       const confirmText = document.getElementById("confirmText");
@@ -545,6 +675,10 @@
       const chatClearModal = document.getElementById("chatClearModal");
       const chatClearCancel = document.getElementById("chatClearCancel");
       const chatClearConfirm = document.getElementById("chatClearConfirm");
+      const settingsOverlay = document.getElementById("settingsOverlay");
+      const settingsBack = document.getElementById("settingsBack");
+      const modelSelect = document.getElementById("modelSelect");
+      const modelHint = document.getElementById("modelHint");
       const layout = document.querySelector(".layout");
       const sidebar = document.querySelector(".sidebar");
       const sidebarDivider = document.getElementById("sidebarDivider");
@@ -552,6 +686,7 @@
       const composerDivider = document.getElementById("composerDivider");
       let editingId = null;
       let pendingDeleteId = null;
+      let modelOptions = [];
       const chatStorageKey = "chat_history_v1";
       const legacyChatKey = "chat_history";
 
@@ -657,6 +792,81 @@
         const initial = prefersLight ? "light" : "dark";
         setTheme(initial);
         setThemeIcon(initial);
+      };
+      const renderModelOptions = (currentModel) => {
+        modelSelect.innerHTML = "";
+        modelOptions.forEach((name) => {
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = name;
+          if (name === currentModel) {
+            option.selected = true;
+          }
+          modelSelect.appendChild(option);
+        });
+      };
+      const loadSettings = async () => {
+        modelSelect.disabled = true;
+        modelHint.textContent = "正在读取已安装模型...";
+        try {
+          const res = await fetch("/settings/model");
+          if (!res.ok) {
+            modelHint.textContent = "读取模型列表失败，请检查 Ollama 服务。";
+            return;
+          }
+          const data = await res.json();
+          modelOptions = Array.isArray(data.available_models)
+            ? data.available_models.map((item) => item.name).filter(Boolean)
+            : [];
+          if (!modelOptions.length) {
+            modelHint.textContent = "当前没有可用的对话模型。";
+            modelSelect.innerHTML = "";
+            return;
+          }
+          renderModelOptions(data.current_model);
+          modelSelect.disabled = false;
+          modelHint.textContent = `当前生效模型：${data.current_model}`;
+        } catch {
+          modelHint.textContent = "读取模型列表失败，请检查 Ollama 服务。";
+        }
+      };
+      const openSettings = async () => {
+        settingsOverlay.classList.remove("hidden");
+        await loadSettings();
+      };
+      const closeSettings = () => {
+        settingsOverlay.classList.add("hidden");
+      };
+      const applyModelChange = async () => {
+        const nextModel = modelSelect.value;
+        if (!nextModel) {
+          return;
+        }
+        modelSelect.disabled = true;
+        modelHint.textContent = `正在切换到 ${nextModel}...`;
+        try {
+          const res = await fetch("/settings/model", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: nextModel }),
+          });
+          if (!res.ok) {
+            modelHint.textContent = "模型切换失败，请稍后重试。";
+            await loadSettings();
+            return;
+          }
+          const data = await res.json();
+          modelOptions = Array.isArray(data.available_models)
+            ? data.available_models.map((item) => item.name).filter(Boolean)
+            : [];
+          renderModelOptions(data.current_model);
+          modelSelect.disabled = false;
+          modelHint.textContent = `当前生效模型：${data.current_model}`;
+          setStatus(`当前对话模型已切换为 ${data.current_model}`);
+        } catch {
+          modelHint.textContent = "模型切换失败，请稍后重试。";
+          await loadSettings();
+        }
       };
 
       const loadNotes = async () => {
@@ -785,6 +995,15 @@
         const next = document.body.dataset.theme === "light" ? "dark" : "light";
         setTheme(next);
         setThemeIcon(next);
+      });
+      settingsToggle.addEventListener("click", async () => {
+        await openSettings();
+      });
+      settingsBack.addEventListener("click", () => {
+        closeSettings();
+      });
+      modelSelect.addEventListener("change", async () => {
+        await applyModelChange();
       });
 
       const attachVerticalResize = () => {

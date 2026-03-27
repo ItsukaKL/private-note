@@ -2,8 +2,8 @@ import json
 import os
 import urllib.request
 
+import launcher_core
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 DEFAULT_OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
 DEFAULT_OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "llama2:7b")
 SETTINGS_PATH = os.getenv("APP_SETTINGS_PATH", "data/app_settings.json")
@@ -21,14 +21,14 @@ def _ensure_settings_dir() -> None:
 
 
 def _get_json(path: str) -> dict:
-    url = f"{OLLAMA_BASE_URL}{path}"
+    url = f"{launcher_core.get_ollama_base_url()}{path}"
     request = urllib.request.Request(url, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(request) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
 def _post_json(path: str, payload: dict) -> dict:
-    url = f"{OLLAMA_BASE_URL}{path}"
+    url = f"{launcher_core.get_ollama_base_url()}{path}"
     data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(request) as response:
@@ -112,7 +112,14 @@ def embed_text(text: str) -> list[float]:
 
 
 def generate_text(prompt: str) -> str:
-    payload = {"model": get_llm_model(), "prompt": prompt, "stream": False}
+    payload = {
+        "model": get_llm_model(),
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "temperature": 0,
+        },
+    }
     response = _post_json("/api/generate", payload)
     if "response" in response:
         return response["response"]

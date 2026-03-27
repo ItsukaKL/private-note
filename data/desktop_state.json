@@ -1,0 +1,29 @@
+{
+  "chat_items": [
+    {
+      "role": "user",
+      "text": "精卫的歌手是谁？",
+      "time": "2026-03-28T01:03:53+08:00",
+      "model": ""
+    },
+    {
+      "role": "assistant",
+      "text": "精卫的歌手是30年前，50年后。",
+      "time": "2026-03-28T01:03:53+08:00",
+      "model": "qwen2:7b"
+    },
+    {
+      "role": "user",
+      "text": "怎么初始化git仓库？",
+      "time": "2026-03-28T01:04:03+08:00",
+      "model": ""
+    },
+    {
+      "role": "assistant",
+      "text": "初始化仓库：git init",
+      "time": "2026-03-28T01:04:10+08:00",
+      "model": "qwen2:7b"
+    }
+  ],
+  "theme_name": "light"
+}

@@ -23,28 +23,29 @@ def add_chunks(note_id: int, chunks: list[str], embeddings: list[list[float]]) -
     collection.add(ids=ids, documents=chunks, embeddings=embeddings, metadatas=metadatas)
 
 
-def query_chunks(embedding: list[float], top_k: int, similarity_threshold: float) -> list[str]:
+def query_chunks(embedding: list[float], top_k: int, similarity_threshold: float | None = None) -> list[dict]:
     collection = get_collection()
     result = collection.query(
         query_embeddings=[embedding],
-        n_results=top_k,
+        n_results=max(top_k, 1),
         include=["documents", "distances", "metadatas"],
     )
     documents = result.get("documents", [[]])[0]
     distances = result.get("distances", [[]])[0]
+    metadatas = result.get("metadatas", [[]])[0]
     if not documents:
         return []
-    filtered = []
-    for doc, dist in zip(documents, distances):
-        if dist is None:
-            filtered.append(doc)
-            continue
-        similarity = 1 - dist
-        if similarity >= similarity_threshold:
-            filtered.append(doc)
-    if filtered:
-        return filtered
-    return documents
+
+    items = []
+    for doc, dist, metadata in zip(documents, distances, metadatas):
+        items.append(
+            {
+                "document": doc,
+                "distance": dist,
+                "metadata": metadata or {},
+            }
+        )
+    return items
 
 
 def delete_note_chunks(note_id: int) -> None:

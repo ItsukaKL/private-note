@@ -74,15 +74,10 @@ private-note/
 ├─ stop.bat                # Windows 双击停止
 ├─ justfile                # 常用命令封装
 ├─ pyproject.toml          # Python 依赖定义
-├─ runtime/
-│  └─ ollama/              # 项目私有 Ollama 运行时目录
-├─ data/
-│  ├─ notes.db             # SQLite 数据
-│  ├─ chroma/              # Chroma 数据
-│  ├─ ollama-models/       # 项目私有模型目录
-│  ├─ logs/                # 客户端与运行时日志
-│  └─ run/                 # PID 文件
-└─ .venv/                  # 项目虚拟环境
+├─ vendor/                 # 本地运行时依赖目录，源码仓库不跟踪
+├─ runtime/                # 项目私有 Ollama 运行时目录，运行后生成
+├─ data/                   # SQLite、Chroma、模型、日志等本地数据，运行后生成
+└─ .venv/                  # uv 创建的项目虚拟环境，源码仓库不跟踪
 ```
 
 ## 核心模块说明
@@ -110,17 +105,58 @@ private-note/
 
 ### 环境要求
 
-- Windows
+- Windows x64
 - Python 3.10 及以上
 - `uv`
 
-### 安装依赖
+### 源码运行
+
+源码仓库不会提交 `.venv/`、`vendor/`、`runtime/`、`data/` 等本地运行产物。首次拉取源码后，先安装 Python 依赖：
 
 ```powershell
 uv sync
 ```
 
-### 启动客户端
+然后使用当前 Python 环境启动桌面客户端：
+
+```powershell
+uv run python launcher_desktop.py
+```
+
+也可以使用常用命令封装：
+
+```powershell
+just sync
+just test
+```
+
+> `run.bat` / `run.ps1` 面向带项目内置 Python 的本地发布环境，会查找 `vendor/python-3.11.7-embed-amd64/python.exe`。如果只是从 Git 拉源码且还没有准备 `vendor` 目录，请优先使用 `uv run python launcher_desktop.py`。
+
+### 需要手动准备的依赖
+
+从源码仓库拉下来后，需要自己准备以下内容：
+
+- Python 3.10+：用于源码运行；Windows 官方 Python 一般自带 Tkinter。
+- `uv`：用于根据 `pyproject.toml` / `uv.lock` 创建 `.venv/` 并安装 `chromadb`、`psutil` 等 Python 依赖。
+- `just`：可选；只在使用 `just sync`、`just test`、`just build`、`just portable` 这些快捷命令时需要。
+- Ollama 运行时：可在客户端设置页的“管理依赖”里安装，也可以手动准备到 `runtime/` 或 `vendor/`。默认固定版本为 `0.20.2`，CPU 模式使用 `ollama-windows-amd64.zip`，GPU 模式还需要 `ollama-windows-amd64-mlx.zip`。
+- 本地模型：问答推荐 `qwen2:7b`，向量推荐 `nomic-embed-text`。模型不会进入 Git，需要在客户端内安装，或通过 Ollama 手动拉取。
+- 内置 Python 运行时：仅当要使用 `run.bat` / `run.ps1` 或本地打包脚本时需要。目录应为 `vendor/python-3.11.7-embed-amd64/`，并包含 Tkinter、`chromadb`、`psutil`、`PyInstaller` 等运行/构建依赖。
+
+这些目录和文件都属于本地环境或用户数据，已经由 `.gitignore` 排除：
+
+```text
+.venv/
+vendor/
+runtime/
+data/notes.db
+data/chroma/
+data/ollama-models/
+data/logs/
+data/run/
+```
+
+### 本地发布环境启动
 
 双击：
 
@@ -133,6 +169,8 @@ run.bat
 ```powershell
 .\run.ps1
 ```
+
+注意：这种方式要求已经准备好 `vendor/python-3.11.7-embed-amd64/`。
 
 ### 停止客户端
 
@@ -150,7 +188,7 @@ stop.bat
 
 ## 打包构建
 
-当前仓库已经内置 PyInstaller 打包脚手架，不需要额外单独新建一个打包项目。
+当前仓库已经内置 PyInstaller 打包脚手架，不需要额外单独新建一个打包项目。当前推荐发布形态是 one-folder 便携版压缩包。
 
 ### 构建命令
 
@@ -172,9 +210,63 @@ just build
 dist/PrivateNoteDesktop/
 ```
 
+### 便携版压缩包
+
+生成 one-folder 便携版压缩包：
+
+```powershell
+.\packaging\package-portable.ps1 -Clean
+```
+
+或使用：
+
+```powershell
+just portable
+```
+
+输出路径：
+
+```text
+packaging/output/PrivateNoteDesktop-portable-v<version>-win-x64.zip
+```
+
+压缩包展开后会包含：
+
+- `PrivateNoteDesktop.exe`
+- `_internal/`
+- `README.txt`
+
+其中 Python 运行时与普通依赖已经随便携包一起分发，`Ollama` 与模型仍然在客户端设置页中按需安装。
+
+### 打包成品运行依赖
+
+打包完成后的便携版面向普通使用者，不需要再安装 Python、`uv`、`just`、PyInstaller，也不需要保留源码目录。将压缩包完整解压到可写目录后，直接运行：
+
+```text
+PrivateNoteDesktop/PrivateNoteDesktop.exe
+```
+
+成品运行时仍然需要按需准备：
+
+- Windows x64：当前便携包只面向 Windows x64。
+- 可写目录：不要放在 `Program Files` 等受限目录，否则本地数据库、日志、模型和运行时可能无法写入。
+- Ollama 运行时：CPU 运行时可随发布包内置；如果发布包没有内置，或需要 GPU 模式，可在客户端设置页的“管理依赖”里在线安装。
+- 本地模型：问答模型 `qwen2:7b` 和向量模型 `nomic-embed-text` 不会预置在 Git 中，通常也不会放进便携包，需要首次使用时在客户端内安装。
+- 网络连接：首次在线安装 Ollama 运行时或拉取模型时需要访问外网；如果目标机器离线，需要提前把运行时和模型准备到对应目录。
+- 磁盘空间：模型文件通常较大，至少预留数 GB 空间；GPU 运行时和多模型场景需要更多空间。
+- GPU 依赖：CPU 模式不需要显卡；GPU 模式仅面向 NVIDIA 环境，并依赖本机显卡驱动可用。
+
+源码仓库不跟踪打包所需的 `vendor/` 运行时目录。如果需要在一台新机器上重新打包，请先准备 `vendor/python-3.11.7-embed-amd64/`，并确保其中已经安装 `chromadb`、`psutil`、`PyInstaller`；如需离线部署 Ollama，也可以准备 `vendor/ollama-windows-amd64-cpu-0.20.2/` 或 `vendor/ollama-windows-amd64-gpu-nvidia-0.20.2/`。
+
 ### 图标文件
 
-如果你已经准备好软件图标，把它放到：
+源码运行时优先读取根目录图标：
+
+```text
+icon.png
+```
+
+Windows 可执行文件图标仍然使用：
 
 ```text
 packaging/assets/app.ico

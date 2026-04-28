@@ -5,8 +5,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$PythonExe = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
-$PythonwExe = Join-Path $ProjectRoot ".venv\Scripts\pythonw.exe"
+$PythonRoot = Join-Path $ProjectRoot "vendor\python-3.11.7-embed-amd64"
+$PythonExe = Join-Path $PythonRoot "python.exe"
+$PythonwExe = Join-Path $PythonRoot "pythonw.exe"
+$TclLibrary = Join-Path $PythonRoot "Library\lib\tcl8.6"
+$TkLibrary = Join-Path $PythonRoot "Library\lib\tk8.6"
+$PythonBin = Join-Path $PythonRoot "Library\bin"
 $DesktopStdoutLog = Join-Path $ProjectRoot "data\logs\launcher.desktop.stdout.log"
 $DesktopStderrLog = Join-Path $ProjectRoot "data\logs\launcher.desktop.stderr.log"
 
@@ -15,36 +19,35 @@ function Write-Step {
     Write-Host "[private-note] $Message"
 }
 
-function Ensure-Command {
-    param(
-        [string]$Name,
-        [string]$Hint
+function Test-ManagedPidFiles {
+    $runDir = Join-Path $ProjectRoot "data\run"
+    $paths = @(
+        (Join-Path $runDir "launcher.pid"),
+        (Join-Path $runDir "app.pid"),
+        (Join-Path $runDir "ollama.pid")
     )
 
-    $command = Get-Command $Name -ErrorAction SilentlyContinue
-    if ($null -eq $command) {
-        throw "$Name was not found. $Hint"
+    foreach ($path in $paths) {
+        if (Test-Path $path) {
+            return $true
+        }
     }
-    return $command
+    return $false
 }
 
 try {
-    if (Test-Path $PythonExe) {
-        Write-Step "Stopping previous launcher instance if it is running..."
+    $env:PATH = "$PythonRoot;$PythonBin;$env:PATH"
+    $env:TCL_LIBRARY = $TclLibrary
+    $env:TK_LIBRARY = $TkLibrary
+    $env:PYTHONHOME = $PythonRoot
+
+    if ((Test-Path $PythonExe) -and (Test-ManagedPidFiles)) {
+        Write-Step "Stopping previous managed processes..."
         & $PythonExe launcher_cli.py shutdown-all *> $null
     }
 
-    Write-Step "Checking required commands..."
-    $uvCommand = Ensure-Command -Name "uv" -Hint "Install uv first: https://docs.astral.sh/uv/"
-
-    Write-Step "Syncing project dependencies..."
-    & $uvCommand.Source sync
-    if ($LASTEXITCODE -ne 0) {
-        throw "uv sync failed."
-    }
-
     if (-not (Test-Path $PythonExe)) {
-        throw "Python executable was not found at $PythonExe."
+        throw "Vendored Python runtime was not found at $PythonExe."
     }
 
     $launcherExe = if (Test-Path $PythonwExe) { $PythonwExe } else { $PythonExe }

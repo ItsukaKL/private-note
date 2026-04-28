@@ -15,3 +15,9 @@ restart:
 
 build:
     powershell -NoProfile -ExecutionPolicy Bypass -File .\packaging\build.ps1
+
+portable:
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\packaging\package-portable.ps1 -Clean
+
+test:
+    uv run pytest

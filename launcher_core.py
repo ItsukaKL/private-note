@@ -137,8 +137,10 @@ def _resolve_first_existing_dir(candidates: tuple[Path, ...], required_files: tu
 
 VENDORED_PYTHON_DIR = _resolve_first_existing_dir(VENDORED_PYTHON_DIR_CANDIDATES, VENDORED_PYTHON_REQUIRED_FILES)
 
-DEFAULT_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "qwen2:7b")
+DEFAULT_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:7b")
 DEFAULT_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+RECOMMENDED_CHAT_MODELS = ("qwen2.5:3b", "qwen2.5:7b")
+RECOMMENDED_MODEL_NAMES = (*RECOMMENDED_CHAT_MODELS, DEFAULT_EMBED_MODEL)
 
 LAUNCHER_EVENT_LOG = LOG_DIR / "launcher.events.log"
 DESKTOP_STDOUT_LOG = LOG_DIR / "launcher.desktop.stdout.log"

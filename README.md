@@ -139,7 +139,7 @@ just test
 - `uv`：用于根据 `pyproject.toml` / `uv.lock` 创建 `.venv/` 并安装 `chromadb`、`psutil` 等 Python 依赖。
 - `just`：可选；只在使用 `just sync`、`just test`、`just build`、`just portable` 这些快捷命令时需要。
 - Ollama 运行时：可在客户端设置页的“管理依赖”里安装，也可以手动准备到 `runtime/` 或 `vendor/`。默认固定版本为 `0.20.2`，CPU 模式使用 `ollama-windows-amd64.zip`，GPU 模式还需要 `ollama-windows-amd64-mlx.zip`。
-- 本地模型：问答推荐 `qwen2:7b`，向量推荐 `nomic-embed-text`。模型不会进入 Git，需要在客户端内安装，或通过 Ollama 手动拉取。
+- 本地模型：问答推荐轻量档 `qwen2.5:3b` 或默认档 `qwen2.5:7b`，向量推荐 `nomic-embed-text`。模型不会进入 Git，需要在客户端内安装，或通过 Ollama 手动拉取。
 - 内置 Python 运行时：仅当要使用 `run.bat` / `run.ps1` 或本地打包脚本时需要。目录应为 `vendor/python-3.11.7-embed-amd64/`，并包含 Tkinter、`chromadb`、`psutil`、`PyInstaller` 等运行/构建依赖。
 
 这些目录和文件都属于本地环境或用户数据，已经由 `.gitignore` 排除：
@@ -250,7 +250,7 @@ PrivateNoteDesktop/PrivateNoteDesktop.exe
 - Windows x64：当前便携包只面向 Windows x64。
 - 可写目录：不要放在 `Program Files` 等受限目录，否则本地数据库、日志、模型和运行时可能无法写入。
 - Ollama 运行时：CPU 运行时可随发布包内置；如果发布包没有内置，或需要 GPU 模式，可在客户端设置页的“管理依赖”里在线安装。
-- 本地模型：问答模型 `qwen2:7b` 和向量模型 `nomic-embed-text` 不会预置在 Git 中，通常也不会放进便携包，需要首次使用时在客户端内安装。
+- 本地模型：问答模型 `qwen2.5:3b` / `qwen2.5:7b` 和向量模型 `nomic-embed-text` 不会预置在 Git 中，通常也不会放进便携包，需要首次使用时在客户端内安装。
 - 网络连接：首次在线安装 Ollama 运行时或拉取模型时需要访问外网；如果目标机器离线，需要提前把运行时和模型准备到对应目录。
 - 磁盘空间：模型文件通常较大，至少预留数 GB 空间；GPU 运行时和多模型场景需要更多空间。
 - GPU 依赖：CPU 模式不需要显卡；GPU 模式仅面向 NVIDIA 环境，并依赖本机显卡驱动可用。
@@ -281,7 +281,8 @@ packaging/assets/app.ico
 2. 打开右上角设置页
 3. 安装项目私有 Ollama
 4. 安装推荐模型：
-   - `qwen2:7b`
+   - `qwen2.5:3b`（轻量，适合配置较弱或希望启动更快的机器）
+   - `qwen2.5:7b`（默认，回答质量和速度更均衡）
    - `nomic-embed-text`
 
 ### 笔记管理

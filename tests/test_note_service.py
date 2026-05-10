@@ -114,7 +114,7 @@ def test_ask_question_returns_sources(repo_modules, monkeypatch):
     monkeypatch.setattr(note_service.launcher_core, "ensure_ollama_running", lambda: None)
     monkeypatch.setattr(note_service, "init_runtime_settings", lambda: None)
     monkeypatch.setattr(note_service.launcher_core, "get_saved_runtime_profile", lambda: "gpu")
-    monkeypatch.setattr(note_service, "get_llm_model", lambda: "qwen2:7b")
+    monkeypatch.setattr(note_service, "get_llm_model", lambda: "qwen2.5:7b")
     monkeypatch.setattr(note_service, "embed_text", lambda text: [1.0])
     monkeypatch.setattr(
         note_service,
@@ -149,7 +149,7 @@ def test_ask_question_filters_unrelated_sources(repo_modules, monkeypatch):
     monkeypatch.setattr(note_service.launcher_core, "ensure_ollama_running", lambda: None)
     monkeypatch.setattr(note_service, "init_runtime_settings", lambda: None)
     monkeypatch.setattr(note_service.launcher_core, "get_saved_runtime_profile", lambda: "cpu")
-    monkeypatch.setattr(note_service, "get_llm_model", lambda: "qwen2:7b")
+    monkeypatch.setattr(note_service, "get_llm_model", lambda: "qwen2.5:7b")
     monkeypatch.setattr(note_service, "embed_text", lambda text: [1.0])
 
     relevant_id = db.insert_note("\u5408\u5e76 git \u5206\u652f", "\u4f7f\u7528 git merge <branch-name> \u5408\u5e76\u5206\u652f", "alice")
@@ -196,7 +196,7 @@ def test_ask_question_returns_only_single_best_source(repo_modules, monkeypatch)
     monkeypatch.setattr(note_service.launcher_core, "ensure_ollama_running", lambda: None)
     monkeypatch.setattr(note_service, "init_runtime_settings", lambda: None)
     monkeypatch.setattr(note_service.launcher_core, "get_saved_runtime_profile", lambda: "gpu")
-    monkeypatch.setattr(note_service, "get_llm_model", lambda: "qwen2:7b")
+    monkeypatch.setattr(note_service, "get_llm_model", lambda: "qwen2.5:7b")
     monkeypatch.setattr(note_service, "embed_text", lambda text: [1.0])
 
     thesis_id = db.insert_note("\u8bba\u6587\u63d0\u4ea4\u65f6\u95f4\u662f4\u670822\u65e5", "\u8bba\u6587\u63d0\u4ea4\u65f6\u95f4\u662f4\u670822\u65e5\u3002", "alice")

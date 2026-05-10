@@ -23,7 +23,7 @@ def test_model_list_cache_reused_during_runtime_refresh(repo_modules, monkeypatc
         calls.append((path, timeout))
         return {
             "models": [
-                {"name": "qwen2:7b", "details": {"family": "qwen"}},
+                {"name": "qwen2.5:7b", "details": {"family": "qwen"}},
                 {"name": "nomic-embed-text", "details": {"family": "bert"}},
             ]
         }
@@ -32,6 +32,6 @@ def test_model_list_cache_reused_during_runtime_refresh(repo_modules, monkeypatc
 
     client.init_runtime_settings(force_refresh=True)
 
-    assert client.list_chat_models() == ["qwen2:7b"]
+    assert client.list_chat_models() == ["qwen2.5:7b"]
     assert client.list_embedding_models() == ["nomic-embed-text"]
     assert len(calls) == 1

@@ -48,7 +48,6 @@ CONTROL_HOST = "127.0.0.1"
 CONTROL_PORT = 18000 + (zlib.crc32(str(launcher_core.ROOT_DIR).lower().encode("utf-8")) % 1000)
 STATE_PATH = DESKTOP_STATE_PATH
 MAX_CHAT_ITEMS = 200
-MODEL_MANAGER_HIDE_LIMIT_BYTES = 10 * 1024 * 1024 * 1024
 APP_ICON_ICO = launcher_core.ROOT_DIR / "packaging" / "assets" / "app.ico"
 APP_ICON_PNG_PATHS = (
     launcher_core.ROOT_DIR / "icon.png",
@@ -289,21 +288,6 @@ def excerpt_with_query(text: str, query: str, limit: int = 120) -> str:
             snippet = snippet + "..."
         return snippet
     return summarize_note(content, limit=limit)
-
-
-def model_exceeds_hide_limit(entry: dict[str, object]) -> bool:
-    try:
-        size_value = float(entry.get("size") or 0)
-    except (TypeError, ValueError):
-        return False
-    return size_value > MODEL_MANAGER_HIDE_LIMIT_BYTES
-
-
-def model_has_known_size(entry: dict[str, object]) -> bool:
-    try:
-        return float(entry.get("size") or 0) > 0
-    except (TypeError, ValueError):
-        return False
 
 
 def account_role_label(role: str | None) -> str:
@@ -1369,12 +1353,9 @@ class DesktopClient:
         self.model_manager_status_label: tk.Label | None = None
         self.model_manager_feedback_label: tk.Label | None = None
         self.model_manager_source_label: tk.Label | None = None
-        self.model_manager_toggle_large_button = None
-        self.model_manager_rows: dict[str, dict[str, object]] = {}
         self.model_catalog_entries: list[dict[str, object]] = []
         self.model_catalog_source = ""
         self.model_catalog_refreshing = False
-        self.model_manager_hide_large = True
         self.model_operations: dict[str, dict[str, object]] = {}
         self.model_task_items = self._load_model_tasks()
         self.model_detail_window: tk.Toplevel | None = None
@@ -3169,10 +3150,12 @@ class DesktopClient:
     def _schedule_auto_refresh(self) -> None:
         if self.shutdown_in_progress:
             return
-        if not self.refresh_in_flight and not self.model_busy:
+        dependency_window_open = self._dependency_manager_is_open()
+        model_window_open = self.model_manager_window is not None and self.model_manager_window.winfo_exists()
+        if self.current_page == "settings" and not dependency_window_open and not model_window_open and not self.refresh_in_flight and not self.model_busy:
             self.refresh_settings_status(silent=True)
         try:
-            self.root.after(7000, self._schedule_auto_refresh)
+            self.root.after(30000, self._schedule_auto_refresh)
         except tk.TclError:
             return
 
@@ -3956,7 +3939,7 @@ class DesktopClient:
                 f"当前运行模式：{selected_label}。"
                 f"CPU 包：{'已内置' if cpu_status.get('bundled_available') else '缺失'}；"
                 f"GPU 包：{'已内置' if gpu_bundle_ready else '缺失'}。"
-                f"推荐模型：对话 {launcher_core.DEFAULT_LLM_MODEL}，向量 {launcher_core.DEFAULT_EMBED_MODEL}。"
+                f"推荐模型：对话 {', '.join(launcher_core.RECOMMENDED_CHAT_MODELS)}，向量 {launcher_core.DEFAULT_EMBED_MODEL}。"
             )
             return payload
 
@@ -4064,7 +4047,6 @@ class DesktopClient:
         self.dependency_feedback_label.configure(text=str(payload.get("dependency_hint") or ""))
 
         self._update_runtime_buttons(ollama_state, runtime_model)
-        self.refresh_dependency_manager_window(announce=False)
         self._apply_accounts_payload(list(payload.get("accounts") or []))
         self._render_logs(payload)
 
@@ -4210,6 +4192,9 @@ class DesktopClient:
         if self.dependency_refresh_button is not None:
             self._set_button_enabled(self.dependency_refresh_button, enabled)
 
+    def _dependency_manager_is_open(self) -> bool:
+        return self.dependency_manager_window is not None and self.dependency_manager_window.winfo_exists()
+
     def _dependency_status_tone(self, entry: dict[str, object]) -> str:
         if bool(entry.get("installed")):
             return "good"
@@ -4262,7 +4247,7 @@ class DesktopClient:
             installed = bool(item.get("installed"))
             model_type = "向量模型" if bool(item.get("is_embedding")) else "对话模型"
             size_text = format_model_size(item.get("size"))
-            hint_parts = [f"来源：官方模型目录", f"类型：{model_type}"]
+            hint_parts = [f"来源：内置推荐清单", f"类型：{model_type}"]
             if size_text != "-":
                 hint_parts.append(f"大小：{size_text}")
             entries.append(
@@ -4442,7 +4427,6 @@ class DesktopClient:
         self.dependency_progress_widgets = {}
 
     def refresh_dependency_sources(self, announce: bool = True) -> None:
-        self.refresh_dependency_manager_window(announce=announce)
         self.refresh_model_catalog()
 
     def refresh_dependency_manager_window(self, announce: bool = True) -> None:
@@ -4499,7 +4483,7 @@ class DesktopClient:
 
         sections = [
             ("运行时依赖", runtime_entries),
-            ("模型目录", model_entries),
+            ("推荐模型", model_entries),
         ]
         entry_index = 1
         for section_title, section_entries in sections:
@@ -4813,13 +4797,6 @@ class DesktopClient:
 
         self.model_manager_refresh_button = self._make_button(action_row, "刷新模型列表", self.refresh_model_catalog, style="Ghost.TButton")
         self.model_manager_refresh_button.pack(side="right")
-        self.model_manager_toggle_large_button = self._make_button(
-            action_row,
-            "显示大模型",
-            self.toggle_large_model_visibility,
-            style="Ghost.TButton",
-        )
-        self.model_manager_toggle_large_button.pack(side="right", padx=(0, 10))
 
         self.model_manager_area = ScrollArea(window, self.palette.panel_bg, self.palette)
         self.model_manager_area.pack(fill="both", expand=True, padx=16, pady=(0, 12))
@@ -4837,7 +4814,6 @@ class DesktopClient:
         self.model_manager_feedback_label.pack(fill="x")
         self.label_roles.append((self.model_manager_feedback_label, "muted"))
 
-        self._refresh_model_manager_window()
         self.refresh_model_catalog()
 
     def _close_model_manager_window(self) -> None:
@@ -4852,32 +4828,21 @@ class DesktopClient:
         self.model_manager_status_label = None
         self.model_manager_feedback_label = None
         self.model_manager_source_label = None
-        self.model_manager_toggle_large_button = None
-        self.model_manager_rows = {}
-
-    def toggle_large_model_visibility(self) -> None:
-        self.model_manager_hide_large = not self.model_manager_hide_large
-        self._refresh_model_manager_window()
-
     def refresh_model_catalog(self) -> None:
         if self.model_catalog_refreshing:
             return
         self.model_catalog_refreshing = True
         if self.model_manager_status_label is not None and self.model_manager_status_label.winfo_exists():
-            self.model_manager_status_label.configure(text="正在读取模型列表...")
+            self.model_manager_status_label.configure(text="正在刷新本地安装状态...")
         if self.dependency_manager_status_label is not None and self.dependency_manager_status_label.winfo_exists():
-            self.dependency_manager_status_label.configure(text="正在读取官方模型目录...")
+            self.dependency_manager_status_label.configure(text="正在刷新本地安装状态...")
 
         def worker():
-            official_models: list[dict[str, object]]
-            source_text: str
-            try:
-                official_models = [dict(item) for item in launcher_core.fetch_official_model_catalog()]
-                source_text = f"已读取官方模型库，共 {len(official_models)} 个模型。"
-            except Exception as exc:
-                official_models = []
-                source_text = f"官方模型库读取失败，仅显示本地和默认模型。{exc}"
-
+            recommended_sizes = {
+                "qwen2.5:3b": int(1.9 * 1024**3),
+                "qwen2.5:7b": int(4.7 * 1024**3),
+                "nomic-embed-text": int(274 * 1024**2),
+            }
             installed_entries_by_name = {
                 str(item.get("name") or "").strip(): dict(item)
                 for item in launcher_core.list_private_model_entries()
@@ -4890,49 +4855,54 @@ class DesktopClient:
                 pass
 
             merged: dict[str, dict[str, object]] = {}
-            for item in official_models:
-                name = str(item.get("name") or "").strip()
-                if not name:
-                    continue
-                payload = dict(item)
+            for name in launcher_core.RECOMMENDED_MODEL_NAMES:
+                payload: dict[str, object] = {
+                    "name": name,
+                    "installed": launcher_core.test_model_installed(name, sorted(installed_names)),
+                    "is_embedding": "embed" in name.lower() or "bert" in name.lower(),
+                    "details": {},
+                    "size": recommended_sizes.get(name, 0),
+                }
                 if name in installed_entries_by_name:
                     installed_payload = installed_entries_by_name[name]
                     for key in ("size", "details", "modified_at", "digest", "model"):
                         if not payload.get(key) and installed_payload.get(key):
                             payload[key] = installed_payload.get(key)
-                payload["name"] = name
-                payload["installed"] = name in installed_names
                 payload["is_embedding"] = is_embedding_model_entry(payload)
                 merged[name] = payload
 
-            for name in {launcher_core.DEFAULT_LLM_MODEL, launcher_core.DEFAULT_EMBED_MODEL, *installed_names}:
+            for name in sorted(installed_names):
                 if not name:
+                    continue
+                if name not in launcher_core.RECOMMENDED_MODEL_NAMES:
                     continue
                 fallback_entry = {
                     "name": name,
-                    "installed": name in installed_names,
+                    "installed": launcher_core.test_model_installed(name, sorted(installed_names)),
                     "is_embedding": "embed" in name.lower() or "bert" in name.lower(),
                     "details": dict((installed_entries_by_name.get(name) or {}).get("details") or {}),
                     "size": (installed_entries_by_name.get(name) or {}).get("size") or 0,
                 }
                 if name in merged:
-                    merged[name]["installed"] = name in installed_names
+                    merged[name]["installed"] = launcher_core.test_model_installed(name, sorted(installed_names))
                     continue
                 merged[name] = fallback_entry
 
             entries = list(merged.values())
-            entries.sort(key=lambda item: (0 if item.get("installed") else 1, str(item.get("name") or "").lower()))
-            return {"entries": entries, "source_text": source_text}
+            order = {name: index for index, name in enumerate(launcher_core.RECOMMENDED_MODEL_NAMES)}
+            entries.sort(key=lambda item: order.get(str(item.get("name") or ""), 999))
+            return {"entries": entries, "source_text": "轻量推荐清单：仅显示 Qwen 2.5 3B / 7B 与向量模型。"}
 
         def on_success(payload: dict) -> None:
             self.model_catalog_refreshing = False
             self.model_catalog_entries = list(payload.get("entries") or [])
             self.model_catalog_source = str(payload.get("source_text") or "")
             if self.model_manager_status_label is not None and self.model_manager_status_label.winfo_exists():
-                self.model_manager_status_label.configure(text="模型列表已更新。")
+                self.model_manager_status_label.configure(text="模型安装状态已更新。")
             if self.dependency_manager_status_label is not None and self.dependency_manager_status_label.winfo_exists():
-                self.dependency_manager_status_label.configure(text="模型目录已更新。")
-            self.refresh_dependency_manager_window(announce=False)
+                self.dependency_manager_status_label.configure(text="模型安装状态已更新。")
+            if not self.runtime_busy and not self.model_busy:
+                self.refresh_dependency_manager_window(announce=False)
             self._refresh_model_manager_window()
 
         def on_error(exc: Exception) -> None:
@@ -4941,7 +4911,8 @@ class DesktopClient:
                 self.model_manager_status_label.configure(text=str(exc))
             if self.dependency_manager_status_label is not None and self.dependency_manager_status_label.winfo_exists():
                 self.dependency_manager_status_label.configure(text=str(exc))
-            self.refresh_dependency_manager_window(announce=False)
+            if not self.runtime_busy and not self.model_busy:
+                self.refresh_dependency_manager_window(announce=False)
             self._refresh_model_manager_window()
 
         self._run_worker(worker, on_success, on_error)
@@ -5186,7 +5157,6 @@ class DesktopClient:
         if self.model_manager_window is None or not self.model_manager_window.winfo_exists():
             self.model_manager_window = None
             self.model_manager_area = None
-            self.model_manager_rows = {}
             return
         if self.model_manager_area is None or not self.model_manager_area.winfo_exists():
             return
@@ -5197,103 +5167,18 @@ class DesktopClient:
             return
         self.model_manager_area.set_colors(self.palette.panel_bg, self.palette)
         self.model_manager_area.clear()
-        self.model_manager_rows = {}
-        hidden_large_count = sum(1 for item in self.model_catalog_entries if model_exceeds_hide_limit(item))
-        visible_entries = [
-            item
-            for item in self.model_catalog_entries
-            if not self.model_manager_hide_large or not model_exceeds_hide_limit(item)
-        ]
+        visible_entries = list(self.model_catalog_entries)
 
         if self.model_manager_source_label is not None and self.model_manager_source_label.winfo_exists():
-            source_lines = [self.model_catalog_source or "正在读取官方模型库..."]
-            if self.model_manager_hide_large:
-                source_lines.append(f"已隐藏 {hidden_large_count} 个大小超过10G的不合适模型")
-            elif hidden_large_count:
-                source_lines.append(f"当前已显示 {hidden_large_count} 个大小超过10G的模型")
             self.model_manager_source_label.configure(
                 bg=self.palette.root_bg,
                 fg=self.palette.muted,
-                text="\n".join(source_lines),
+                text=self.model_catalog_source or "轻量推荐清单：仅显示 Qwen 2.5 3B / 7B 与向量模型。",
             )
         if self.model_manager_status_label is not None and self.model_manager_status_label.winfo_exists():
             self.model_manager_status_label.configure(bg=self.palette.root_bg, fg=self.palette.muted)
         if self.model_manager_feedback_label is not None and self.model_manager_feedback_label.winfo_exists():
             self.model_manager_feedback_label.configure(bg=self.palette.root_bg, fg=self.palette.muted)
-        if self.model_manager_toggle_large_button is not None and self.model_manager_toggle_large_button.winfo_exists():
-            self.model_manager_toggle_large_button.configure(
-                text="显示大模型" if self.model_manager_hide_large else "隐藏大模型"
-            )
-        if self.model_task_items:
-            tasks_title = tk.Label(
-                self.model_manager_area.content,
-                text="最近任务",
-                bg=self.palette.panel_bg,
-                fg=self.palette.text,
-                font=("Microsoft YaHei UI", 12, "bold"),
-                anchor="w",
-            )
-            tasks_title.pack(fill="x", pady=(0, 10))
-
-            for task in self.model_task_items[:6]:
-                task_card = tk.Frame(
-                    self.model_manager_area.content,
-                    bg=self.palette.panel_alt,
-                    highlightthickness=1,
-                    highlightbackground=self.palette.border,
-                    bd=0,
-                    padx=14,
-                    pady=12,
-                )
-                task_card.pack(fill="x", pady=(0, 10))
-
-                task_top = tk.Frame(task_card, bg=self.palette.panel_alt)
-                task_top.pack(fill="x")
-
-                task_name = tk.Label(
-                    task_top,
-                    text=str(task.get("model_name") or "未命名模型"),
-                    bg=self.palette.panel_alt,
-                    fg=self.palette.text,
-                    font=("Microsoft YaHei UI", 10, "bold"),
-                    anchor="w",
-                )
-                task_name.pack(side="left", fill="x", expand=True)
-
-                task_badge = tk.Label(task_top, text="", anchor="w", font=("Microsoft YaHei UI", 9, "bold"), padx=10, pady=4)
-                task_badge.pack(side="right")
-                task_state = str(task.get("state") or "pending")
-                state_labels = {
-                    "running": "进行中",
-                    "success": "已完成",
-                    "error": "失败",
-                    "interrupted": "已中断",
-                    "pending": "等待中",
-                }
-                self._set_badge(task_badge, state_labels.get(task_state, task_state), self._model_task_badge_tone(task_state))
-
-                task_meta = tk.Label(
-                    task_card,
-                    text=f"{'安装' if str(task.get('kind') or '') == 'install' else '卸载'} · {format_time(str(task.get('updated_at') or '')) or '刚刚'}",
-                    bg=self.palette.panel_alt,
-                    fg=self.palette.muted,
-                    font=("Microsoft YaHei UI", 9),
-                    anchor="w",
-                )
-                task_meta.pack(fill="x", pady=(8, 0))
-
-                task_message = tk.Label(
-                    task_card,
-                    text=str(task.get("message") or ""),
-                    bg=self.palette.panel_alt,
-                    fg=self.palette.text,
-                    font=("Microsoft YaHei UI", 9),
-                    anchor="w",
-                    justify="left",
-                    wraplength=620,
-                )
-                task_message.pack(fill="x", pady=(4, 0))
-
         sections = [
             ("对话模型", [item for item in visible_entries if not bool(item.get("is_embedding"))]),
             ("向量模型", [item for item in visible_entries if bool(item.get("is_embedding"))]),
@@ -5445,29 +5330,29 @@ class DesktopClient:
         details = entry.get("details") or {}
         if not isinstance(details, dict):
             details = {}
-        official_lines = [
+        model_info_lines = [
             f"模型名：{entry.get('name') or '-'}",
-            f"大小：{format_model_size(entry.get('size')) if format_model_size(entry.get('size')) != '-' else '官方总表未提供'}",
-            f"参数量：{details.get('parameter_size') or '官方总表未提供'}",
-            f"量化：{details.get('quantization_level') or '官方总表未提供'}",
-            f"家族：{details.get('family') or '官方总表未提供'}",
+            f"大小：{format_model_size(entry.get('size')) if format_model_size(entry.get('size')) != '-' else '未记录'}",
+            f"参数量：{details.get('parameter_size') or '未记录'}",
+            f"量化：{details.get('quantization_level') or '未记录'}",
+            f"家族：{details.get('family') or '未记录'}",
             f"类型：{'向量模型' if is_embedding_model_entry(entry) else '对话模型'}",
-            f"修改时间：{entry.get('modified_at') or '官方总表未提供'}",
+            f"修改时间：{entry.get('modified_at') or '未记录'}",
         ]
-        official_card = tk.Frame(shell, bg=self.palette.panel_bg, highlightthickness=1, highlightbackground=self.palette.border, bd=0, padx=14, pady=12)
-        official_card.pack(fill="x", pady=(14, 12))
-        official_title = tk.Label(official_card, text="官方参数", bg=self.palette.panel_bg, fg=self.palette.text, font=("Microsoft YaHei UI", 11, "bold"), anchor="w")
-        official_title.pack(anchor="w")
-        official_body = tk.Label(
-            official_card,
-            text="\n".join(official_lines),
+        model_info_card = tk.Frame(shell, bg=self.palette.panel_bg, highlightthickness=1, highlightbackground=self.palette.border, bd=0, padx=14, pady=12)
+        model_info_card.pack(fill="x", pady=(14, 12))
+        model_info_title = tk.Label(model_info_card, text="模型信息", bg=self.palette.panel_bg, fg=self.palette.text, font=("Microsoft YaHei UI", 11, "bold"), anchor="w")
+        model_info_title.pack(anchor="w")
+        model_info_body = tk.Label(
+            model_info_card,
+            text="\n".join(model_info_lines),
             bg=self.palette.panel_bg,
             fg=self.palette.text,
             font=("Microsoft YaHei UI", 10),
             justify="left",
             anchor="w",
         )
-        official_body.pack(anchor="w", pady=(10, 0))
+        model_info_body.pack(anchor="w", pady=(10, 0))
 
         estimate = estimate_model_requirements(entry)
         estimate_card = tk.Frame(shell, bg=self.palette.panel_bg, highlightthickness=1, highlightbackground=self.palette.border, bd=0, padx=14, pady=12)

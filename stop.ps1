@@ -12,6 +12,7 @@ $TkLibrary = Join-Path $PythonRoot "Library\lib\tk8.6"
 $PythonBin = Join-Path $PythonRoot "Library\bin"
 
 try {
+    Push-Location $ProjectRoot
     $env:PATH = "$PythonRoot;$PythonBin;$env:PATH"
     $env:TCL_LIBRARY = $TclLibrary
     $env:TK_LIBRARY = $TkLibrary
@@ -21,9 +22,9 @@ try {
         throw "Vendored Python runtime was not found at $PythonExe."
     }
 
-    & $PythonExe launcher_cli.py shutdown-all
+    & $PythonExe -c "import launcher_core; launcher_core.force_shutdown_all()"
     if ($LASTEXITCODE -ne 0) {
-        throw "shutdown-all command failed."
+        throw "managed process shutdown failed."
     }
     Write-Host "[private-note] All managed processes have been stopped."
     exit 0

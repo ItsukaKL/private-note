@@ -1230,24 +1230,6 @@ def install_managed_dependency(dependency_id: str, progress_callback=None) -> di
     raise ValueError(f"Unsupported dependency id: {normalized_id}")
 
 
-def get_dependency_cli_launch_args() -> list[str]:
-    helper_candidates = (
-        ROOT_DIR / "PrivateNoteCli.exe",
-        ROOT_DIR / "_internal" / "PrivateNoteCli.exe",
-    )
-    for candidate in helper_candidates:
-        if candidate.exists():
-            return [str(candidate), "dependency-cli"]
-
-    if vendored_python_available():
-        return [str(PYTHON_EXE), "launcher_cli.py", "dependency-cli"]
-
-    if not getattr(sys, "frozen", False):
-        return [str(Path(sys.executable).resolve()), "launcher_cli.py", "dependency-cli"]
-
-    raise RuntimeError("未找到可用的依赖管理 CLI 启动器。")
-
-
 def pull_model(model_name: str) -> dict[str, Any]:
     ensure_ollama_running()
     executable = get_active_ollama_executable()

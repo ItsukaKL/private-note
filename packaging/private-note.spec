@@ -53,21 +53,6 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
-cli_a = Analysis(
-    [str(project_root / "launcher_cli.py")],
-    pathex=[str(project_root)],
-    binaries=[],
-    datas=[],
-    hiddenimports=[],
-    hookspath=[],
-    hooksconfig={},
-    runtime_hooks=[],
-    excludes=[],
-    noarchive=False,
-    optimize=0,
-)
-cli_pyz = PYZ(cli_a.pure)
-
 desktop_exe = EXE(
     pyz,
     a.scripts,
@@ -87,28 +72,8 @@ desktop_exe = EXE(
     icon=str(icon_path) if icon_path.exists() else None,
 )
 
-cli_exe = EXE(
-    cli_pyz,
-    cli_a.scripts,
-    [],
-    exclude_binaries=True,
-    name="PrivateNoteCli",
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    console=True,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon=str(icon_path) if icon_path.exists() else None,
-)
-
 coll = COLLECT(
     desktop_exe,
-    cli_exe,
     a.binaries,
     a.datas,
     strip=False,

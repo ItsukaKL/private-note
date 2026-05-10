@@ -62,7 +62,6 @@ Private Note Desktop 是一个基于本地笔记的桌面端 RAG 知识助手。
 private-note/
 ├─ launcher_desktop.py     # 桌面客户端主入口
 ├─ launcher_core.py        # 运行时辅助、状态与日志
-├─ launcher_cli.py         # stop.ps1 使用的命令行入口
 ├─ note_service.py         # 核心业务逻辑
 ├─ db.py                   # SQLite 读写
 ├─ chroma_store.py         # Chroma 向量存储

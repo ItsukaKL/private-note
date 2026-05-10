@@ -36,6 +36,7 @@ function Test-ManagedPidFiles {
 }
 
 try {
+    Push-Location $ProjectRoot
     $env:PATH = "$PythonRoot;$PythonBin;$env:PATH"
     $env:TCL_LIBRARY = $TclLibrary
     $env:TK_LIBRARY = $TkLibrary
@@ -43,7 +44,7 @@ try {
 
     if ((Test-Path $PythonExe) -and (Test-ManagedPidFiles)) {
         Write-Step "Stopping previous managed processes..."
-        & $PythonExe launcher_cli.py shutdown-all *> $null
+        & $PythonExe -c "import launcher_core; launcher_core.force_shutdown_all()" *> $null
     }
 
     if (-not (Test-Path $PythonExe)) {

@@ -5,7 +5,6 @@ import os
 import queue
 import re
 import socket
-import subprocess
 import sys
 import threading
 import time
@@ -1385,14 +1384,9 @@ class DesktopClient:
         self.dependency_manager_title_label: tk.Label | None = None
         self.dependency_manager_copy_label: tk.Label | None = None
         self.dependency_manager_status_label: tk.Label | None = None
-        self.dependency_manager_terminal: tk.Text | None = None
-        self.dependency_command_entry: tk.Entry | None = None
-        self.dependency_run_button = None
         self.dependency_refresh_button = None
-        self.dependency_clear_button = None
-        self.dependency_command_var = tk.StringVar()
         self.dependency_entries: list[dict[str, object]] = []
-        self.dependency_terminal_history: list[str] = []
+        self.dependency_progress_widgets: dict[str, dict[str, tk.Widget]] = {}
         self.dependency_last_status_text = ""
 
         self.surface_roles: list[tuple[tk.Widget, str]] = []
@@ -2128,7 +2122,7 @@ class DesktopClient:
         self.dependency_title = self._make_card_title(self.diagnostics_area.content, "依赖管理")
         self.dependency_title.pack(anchor="w", pady=(18, 0))
 
-        self.dependency_copy = self._make_card_copy(self.diagnostics_area.content, "在独立命令行窗口里管理运行时和模型依赖。")
+        self.dependency_copy = self._make_card_copy(self.diagnostics_area.content, "在应用内可视化管理运行时、GPU 加速库和模型依赖。")
         self.dependency_copy.pack(anchor="w", pady=(4, 14))
 
         runtime_action_row = tk.Frame(self.diagnostics_area.content, bg=self.palette.panel_bg)
@@ -4212,44 +4206,9 @@ class DesktopClient:
             )
             meta.pack(anchor="w", pady=(6, 0))
 
-    def _dependency_terminal_banner(self) -> list[str]:
-        return [
-            "Private Note Dependency Manager",
-            "输入依赖编号执行安装，例如 1 或 1,3。",
-            "可用命令：refresh / help / clear / rm 12",
-        ]
-
-    def _append_dependency_terminal(self, message: str, *, prompt: bool = False) -> None:
-        text = message if prompt else f"[{datetime.now().strftime('%H:%M:%S')}] {message}"
-        self.dependency_terminal_history.append(text)
-        self.dependency_terminal_history = self.dependency_terminal_history[-240:]
-        terminal = self.dependency_manager_terminal
-        if terminal is None or not terminal.winfo_exists():
-            return
-        terminal.configure(state="normal")
-        terminal.insert("end", text + "\n")
-        terminal.see("end")
-        terminal.configure(state="disabled")
-
-    def _reset_dependency_terminal(self) -> None:
-        self.dependency_terminal_history = []
-        terminal = self.dependency_manager_terminal
-        if terminal is not None and terminal.winfo_exists():
-            terminal.configure(state="normal")
-            terminal.delete("1.0", "end")
-            terminal.configure(state="disabled")
-        for line in self._dependency_terminal_banner():
-            self._append_dependency_terminal(line)
-
     def _set_dependency_manager_controls_enabled(self, enabled: bool) -> None:
-        if self.dependency_command_entry is not None and self.dependency_command_entry.winfo_exists():
-            self.dependency_command_entry.configure(state="normal" if enabled else "disabled")
-        if self.dependency_run_button is not None:
-            self._set_button_enabled(self.dependency_run_button, enabled)
         if self.dependency_refresh_button is not None:
             self._set_button_enabled(self.dependency_refresh_button, enabled)
-        if self.dependency_clear_button is not None:
-            self._set_button_enabled(self.dependency_clear_button, enabled)
 
     def _dependency_status_tone(self, entry: dict[str, object]) -> str:
         if bool(entry.get("installed")):
@@ -4267,6 +4226,32 @@ class DesktopClient:
             percent = max(0.0, min(100.0, float(completed) / float(total) * 100.0))
             status = f"{status} ({percent:.1f}%)"
         return f"{title} · {status}"
+
+    def _dependency_progress_percent(self, event: dict[str, object]) -> float | None:
+        completed = event.get("completed")
+        total = event.get("total")
+        if isinstance(completed, (int, float)) and isinstance(total, (int, float)) and float(total) > 0:
+            return max(0.0, min(1.0, float(completed) / float(total)))
+        return None
+
+    def _set_dependency_card_progress(self, entry_id: str, text: str, percent: float | None = None, *, tone: str = "active") -> None:
+        widgets = self.dependency_progress_widgets.get(entry_id)
+        if not widgets:
+            return
+        label = widgets.get("label")
+        fill = widgets.get("fill")
+        if isinstance(label, tk.Label) and label.winfo_exists():
+            label.configure(text=text)
+        if isinstance(fill, tk.Frame) and fill.winfo_exists():
+            if percent is None:
+                percent = 0.08 if tone == "active" else 0.0
+            color = self.palette.accent
+            if tone == "done":
+                color = "#22c55e"
+            elif tone == "error":
+                color = self.palette.danger
+            fill.configure(bg=color)
+            fill.place_configure(relwidth=max(0.0, min(1.0, percent)))
 
     def _dependency_model_entries(self) -> list[dict[str, object]]:
         entries: list[dict[str, object]] = []
@@ -4302,9 +4287,14 @@ class DesktopClient:
         if event_type == "log":
             message = str(payload.get("message") or "").strip()
             if message:
-                self._append_dependency_terminal(message)
                 if self.dependency_manager_status_label is not None and self.dependency_manager_status_label.winfo_exists():
                     self.dependency_manager_status_label.configure(text=message)
+                entry = dict(payload.get("entry") or {})
+                entry_id = str(entry.get("id") or "")
+                if entry_id:
+                    tone = "done" if "完成" in message else "active"
+                    percent = 1.0 if tone == "done" else 0.08
+                    self._set_dependency_card_progress(entry_id, f"状态：{message}", percent, tone=tone)
             return
 
         if event_type == "progress":
@@ -4319,29 +4309,11 @@ class DesktopClient:
             if self.dependency_manager_status_label is not None and self.dependency_manager_status_label.winfo_exists():
                 self.dependency_manager_status_label.configure(text=text)
             self.dependency_feedback_label.configure(text=text)
+            entry_id = str(entry.get("id") or "")
+            if entry_id:
+                self._set_dependency_card_progress(entry_id, text, self._dependency_progress_percent(event), tone="active")
 
     def open_dependency_manager_window(self) -> None:
-        try:
-            args = launcher_core.get_dependency_cli_launch_args()
-        except RuntimeError as exc:
-            self.set_status(str(exc), tone="error")
-            messagebox.showerror("依赖管理启动失败", str(exc))
-            return
-
-        try:
-            subprocess.Popen(
-                args,
-                cwd=launcher_core.ROOT_DIR,
-                creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
-            )
-        except OSError as exc:
-            self.set_status(str(exc), tone="error")
-            messagebox.showerror("依赖管理启动失败", str(exc))
-            return
-
-        self.set_status("已打开依赖管理命令行。", tone="success")
-        return
-
         if self.dependency_manager_window is not None and self.dependency_manager_window.winfo_exists():
             self.dependency_manager_window.deiconify()
             self.dependency_manager_window.lift()
@@ -4350,9 +4322,9 @@ class DesktopClient:
             return
 
         window = tk.Toplevel(self.root)
-        window.title("依赖管理终端")
-        window.geometry("980x680")
-        window.minsize(900, 620)
+        window.title("依赖管理")
+        window.geometry("1080x720")
+        window.minsize(960, 640)
         window.configure(bg=self.palette.root_bg)
         window.transient(self.root)
         window.protocol("WM_DELETE_WINDOW", self._close_dependency_manager_window)
@@ -4364,7 +4336,7 @@ class DesktopClient:
 
         title = tk.Label(
             header,
-            text="依赖管理终端",
+            text="依赖管理",
             font=("Microsoft YaHei UI", 15, "bold"),
             anchor="w",
             bg=self.palette.root_bg,
@@ -4375,7 +4347,7 @@ class DesktopClient:
 
         copy = tk.Label(
             header,
-            text="应用主体尽量保持轻量。GPU 运行时、GPU 加速库和所有模型都在这里按需安装，不再单独保留模型管理页。",
+            text="运行时、GPU 加速库和模型都安装到项目私有目录；应用不会写入系统级 Python 环境或全局模型目录。",
             font=("Microsoft YaHei UI", 10),
             anchor="w",
             justify="left",
@@ -4385,11 +4357,10 @@ class DesktopClient:
         copy.pack(anchor="w", pady=(6, 0))
         self.dependency_manager_copy_label = copy
 
-        content = tk.Frame(window, bg=self.palette.root_bg, padx=18, pady=(0, 18))
-        content.pack(fill="both", expand=True)
+        content = tk.Frame(window, bg=self.palette.root_bg, padx=18, pady=0)
+        content.pack(fill="both", expand=True, pady=(0, 18))
         self.surface_roles.append((content, "root"))
-        content.grid_columnconfigure(0, weight=3)
-        content.grid_columnconfigure(1, weight=4)
+        content.grid_columnconfigure(0, weight=1)
         content.grid_rowconfigure(0, weight=1)
 
         list_card = tk.Frame(
@@ -4399,55 +4370,34 @@ class DesktopClient:
             highlightbackground=self.palette.border,
             bd=0,
         )
-        list_card.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        list_card.grid(row=0, column=0, sticky="nsew")
 
         list_header = tk.Frame(list_card, bg=self.palette.panel_bg, padx=14, pady=14)
         list_header.pack(fill="x")
+        list_header_top = tk.Frame(list_header, bg=self.palette.panel_bg)
+        list_header_top.pack(fill="x")
         tk.Label(
-            list_header,
+            list_header_top,
             text="依赖目录",
             font=("Microsoft YaHei UI", 12, "bold"),
             anchor="w",
             bg=self.palette.panel_bg,
             fg=self.palette.text,
-        ).pack(anchor="w")
+        ).pack(side="left", anchor="w")
+        self.dependency_refresh_button = self._make_button(list_header_top, "刷新", self.refresh_dependency_sources, style="Ghost.TButton")
+        self.dependency_refresh_button.pack(side="right")
         tk.Label(
             list_header,
-            text="每个依赖都有编号。输入编号即可安装，适合后续继续扩展更多大依赖。",
+            text="点击卡片按钮即可安装或卸载；安装进度会直接显示在对应依赖卡片里。",
             font=("Microsoft YaHei UI", 9),
             anchor="w",
             justify="left",
             bg=self.palette.panel_bg,
             fg=self.palette.muted,
         ).pack(anchor="w", pady=(4, 0))
-
-        self.dependency_manager_list_area = ScrollArea(list_card, self.palette.panel_bg, self.palette)
-        self.dependency_manager_list_area.pack(fill="both", expand=True, padx=14, pady=(0, 14))
-        self.scroll_areas.append(self.dependency_manager_list_area)
-
-        terminal_card = tk.Frame(
-            content,
-            bg=self.palette.panel_bg,
-            highlightthickness=1,
-            highlightbackground=self.palette.border,
-            bd=0,
-        )
-        terminal_card.grid(row=0, column=1, sticky="nsew")
-
-        terminal_header = tk.Frame(terminal_card, bg=self.palette.panel_bg, padx=14, pady=14)
-        terminal_header.pack(fill="x")
-
-        tk.Label(
-            terminal_header,
-            text="命令终端",
-            font=("Microsoft YaHei UI", 12, "bold"),
-            anchor="w",
-            bg=self.palette.panel_bg,
-            fg=self.palette.text,
-        ).pack(anchor="w")
         status_label = tk.Label(
-            terminal_header,
-            text="等待输入命令。",
+            list_header,
+            text="等待操作。",
             font=("Microsoft YaHei UI", 9),
             anchor="w",
             justify="left",
@@ -4457,60 +4407,24 @@ class DesktopClient:
         status_label.pack(anchor="w", pady=(6, 0))
         self.dependency_manager_status_label = status_label
 
-        terminal_shell = tk.Frame(terminal_card, bg="#08111f", padx=12, pady=12)
-        terminal_shell.pack(fill="both", expand=True, padx=14, pady=(0, 14))
+        self.dependency_manager_list_area = ScrollArea(list_card, self.palette.panel_bg, self.palette)
+        self.dependency_manager_list_area.pack(fill="both", expand=True, padx=14, pady=(0, 14))
+        self.scroll_areas.append(self.dependency_manager_list_area)
 
-        terminal = tk.Text(
-            terminal_shell,
-            bg="#08111f",
-            fg="#dbeafe",
-            insertbackground="#dbeafe",
-            selectbackground="#1d4ed8",
-            relief="flat",
-            bd=0,
-            wrap="word",
-            font=("Consolas", 10),
-        )
-        terminal.pack(fill="both", expand=True)
-        terminal.configure(state="disabled")
-        self.dependency_manager_terminal = terminal
-
-        command_row = tk.Frame(terminal_card, bg=self.palette.panel_bg, padx=14, pady=(0, 14))
-        command_row.pack(fill="x")
-
-        prompt_label = tk.Label(
-            command_row,
-            text=">",
-            font=("Consolas", 12, "bold"),
-            anchor="w",
-            bg=self.palette.panel_bg,
-            fg=self.palette.text,
-        )
-        prompt_label.pack(side="left", padx=(0, 8))
-
-        command_entry = tk.Entry(
-            command_row,
-            textvariable=self.dependency_command_var,
-            relief="flat",
-            bd=0,
-            font=("Consolas", 10),
-        )
-        command_entry.pack(side="left", fill="x", expand=True)
-        command_entry.bind("<Return>", self._run_dependency_command)
-        self.dependency_command_entry = command_entry
-        self.entry_widgets.append(command_entry)
-
-        self.dependency_run_button = self._make_button(command_row, "执行", self._run_dependency_command, style="Accent.TButton")
-        self.dependency_run_button.pack(side="left", padx=(10, 0))
-        self.dependency_refresh_button = self._make_button(command_row, "刷新", self.refresh_dependency_sources, style="Ghost.TButton")
-        self.dependency_refresh_button.pack(side="left", padx=(10, 0))
-        self.dependency_clear_button = self._make_button(command_row, "清空", self._reset_dependency_terminal, style="Ghost.TButton")
-        self.dependency_clear_button.pack(side="left", padx=(10, 0))
-
-        self._reset_dependency_terminal()
         self.refresh_dependency_manager_window(announce=False)
         self.refresh_model_catalog()
-        self.root.after(50, command_entry.focus_set)
+
+    def _install_single_dependency(self, entry: dict[str, object]) -> None:
+        if self.runtime_busy or self.model_busy:
+            self.set_status("当前已有任务在执行，请稍后再试。", tone="warning")
+            return
+        self._install_selected_dependencies([dict(entry)])
+
+    def _remove_single_dependency_model(self, entry: dict[str, object]) -> None:
+        if self.runtime_busy or self.model_busy:
+            self.set_status("当前已有任务在执行，请稍后再试。", tone="warning")
+            return
+        self._uninstall_dependency_model(dict(entry))
 
     def _close_dependency_manager_window(self) -> None:
         if self.dependency_manager_window is None:
@@ -4524,11 +4438,8 @@ class DesktopClient:
         self.dependency_manager_title_label = None
         self.dependency_manager_copy_label = None
         self.dependency_manager_status_label = None
-        self.dependency_manager_terminal = None
-        self.dependency_command_entry = None
-        self.dependency_run_button = None
         self.dependency_refresh_button = None
-        self.dependency_clear_button = None
+        self.dependency_progress_widgets = {}
 
     def refresh_dependency_sources(self, announce: bool = True) -> None:
         self.refresh_dependency_manager_window(announce=announce)
@@ -4553,18 +4464,9 @@ class DesktopClient:
         if self.dependency_manager_status_label is not None and self.dependency_manager_status_label.winfo_exists():
             self.dependency_manager_status_label.configure(bg=self.palette.panel_bg, fg=self.palette.muted)
 
-        if self.dependency_command_entry is not None and self.dependency_command_entry.winfo_exists():
-            self.dependency_command_entry.configure(
-                bg=self.palette.input_bg,
-                fg=self.palette.input_fg,
-                insertbackground=self.palette.input_fg,
-                highlightbackground=self.palette.border,
-                highlightcolor=self.palette.accent,
-                highlightthickness=1,
-            )
-
         self.dependency_manager_list_area.set_colors(self.palette.panel_bg, self.palette)
         self.dependency_manager_list_area.clear()
+        self.dependency_progress_widgets = {}
 
         summary_card = tk.Frame(
             self.dependency_manager_list_area.content,
@@ -4586,12 +4488,12 @@ class DesktopClient:
         ).pack(anchor="w")
         tk.Label(
             summary_card,
-            text="基础发布包建议保留 CPU 运行时与核心依赖；GPU 运行时、GPU 加速库和所有模型都更适合在这里按需安装。",
+            text="CPU 运行时可随发布包内置；GPU 运行时、GPU 加速库和模型更适合按需安装到当前应用目录。",
             bg=self.palette.panel_alt,
             fg=self.palette.muted,
             font=("Microsoft YaHei UI", 9),
             justify="left",
-            wraplength=320,
+            wraplength=900,
             anchor="w",
         ).pack(anchor="w", pady=(6, 0))
 
@@ -4653,6 +4555,27 @@ class DesktopClient:
                 status_label.pack(side="right")
                 self._set_badge(status_label, str(entry.get("status_text") or "未知"), self._dependency_status_tone(entry))
 
+                action_row = tk.Frame(card, bg=self.palette.panel_alt)
+                action_row.pack(fill="x", pady=(10, 0))
+                is_installed = bool(entry.get("installed"))
+                if str(entry.get("kind") or "") == "model" and is_installed:
+                    action_button = self._make_button(
+                        action_row,
+                        "卸载",
+                        lambda item=dict(entry): self._remove_single_dependency_model(item),
+                        style="Ghost.TButton",
+                    )
+                else:
+                    action_button = self._make_button(
+                        action_row,
+                        "安装" if not is_installed else "已安装",
+                        lambda item=dict(entry): self._install_single_dependency(item),
+                        style="Accent.TButton" if not is_installed else "Ghost.TButton",
+                    )
+                action_button.pack(side="right")
+                if is_installed and str(entry.get("kind") or "") != "model":
+                    self._set_button_enabled(action_button, False)
+
                 desc_label = tk.Label(
                     card,
                     text=str(entry.get("description") or ""),
@@ -4661,19 +4584,42 @@ class DesktopClient:
                     font=("Microsoft YaHei UI", 9),
                     justify="left",
                     anchor="w",
-                    wraplength=320,
+                    wraplength=820,
                 )
                 desc_label.pack(fill="x", pady=(8, 0))
 
-                hint_label = tk.Label(
+                progress_label = tk.Label(
                     card,
-                    text=f"命令：{entry_index}  ·  {entry.get('hint') or ''}",
+                    text="状态：已安装" if is_installed else "状态：等待安装",
                     bg=self.palette.panel_alt,
                     fg=self.palette.muted,
                     font=("Microsoft YaHei UI", 9),
                     justify="left",
                     anchor="w",
-                    wraplength=320,
+                )
+                progress_label.pack(fill="x", pady=(10, 0))
+
+                progress_shell = tk.Frame(card, bg=self.palette.border, height=8)
+                progress_shell.pack(fill="x", pady=(6, 0))
+                progress_shell.pack_propagate(False)
+                progress_fill = tk.Frame(progress_shell, bg="#22c55e" if is_installed else self.palette.accent, height=8)
+                progress_fill.place(relx=0, rely=0, relheight=1, relwidth=1.0 if is_installed else 0.0)
+                entry_id = str(entry.get("id") or "")
+                if entry_id:
+                    self.dependency_progress_widgets[entry_id] = {
+                        "label": progress_label,
+                        "fill": progress_fill,
+                    }
+
+                hint_label = tk.Label(
+                    card,
+                    text=str(entry.get("hint") or ""),
+                    bg=self.palette.panel_alt,
+                    fg=self.palette.muted,
+                    font=("Microsoft YaHei UI", 9),
+                    justify="left",
+                    anchor="w",
+                    wraplength=820,
                 )
                 hint_label.pack(fill="x", pady=(6, 0))
                 entry_index += 1
@@ -4681,79 +4627,12 @@ class DesktopClient:
         self._set_dependency_manager_controls_enabled(not self.runtime_busy and not self.model_busy)
         if announce:
             message = f"依赖状态已刷新，共 {len(self.dependency_entries)} 项。"
-            self._append_dependency_terminal(message)
             if self.dependency_manager_status_label is not None and self.dependency_manager_status_label.winfo_exists():
                 self.dependency_manager_status_label.configure(text=message)
 
-    def _run_dependency_command(self, _event=None):
-        raw_value = self.dependency_command_var.get().strip()
-        if not raw_value:
-            return "break"
-
-        self.dependency_command_var.set("")
-        self._append_dependency_terminal(f"> {raw_value}", prompt=True)
-
-        command = raw_value.lower()
-        if command in {"help", "?"}:
-            self._append_dependency_terminal("可输入单个编号安装依赖，也可以输入 1,3 这种组合。")
-            self._append_dependency_terminal("命令 refresh 用于刷新状态，clear 用于清空日志，rm 12 用于卸载第 12 项模型。")
-            return "break"
-        if command in {"refresh", "r", "status", "list", "ls"}:
-            self.refresh_dependency_sources(announce=True)
-            return "break"
-        if command in {"clear", "cls"}:
-            self._reset_dependency_terminal()
-            return "break"
-        if self.runtime_busy or self.model_busy:
-            self._append_dependency_terminal("当前已有任务在执行，请稍后再试。")
-            return "break"
-
-        if not self.dependency_entries:
-            self.refresh_dependency_manager_window(announce=False)
-        if command.startswith("rm ") or command.startswith("del ") or command.startswith("uninstall "):
-            token = raw_value.split(maxsplit=1)[1].strip() if len(raw_value.split(maxsplit=1)) > 1 else ""
-            if not token.isdigit():
-                self._append_dependency_terminal(f"无效命令：{raw_value}")
-                return "break"
-            index = int(token)
-            if index < 1 or index > len(self.dependency_entries):
-                self._append_dependency_terminal(f"无效命令：{raw_value}")
-                return "break"
-            entry = dict(self.dependency_entries[index - 1])
-            if str(entry.get("kind") or "") != "model":
-                self._append_dependency_terminal("当前仅支持在依赖终端里卸载模型。")
-                return "break"
-            self._uninstall_dependency_model(entry)
-            return "break"
-        tokens = [token for token in re.split(r"[\s,，]+", raw_value) if token]
-        if not tokens:
-            self._append_dependency_terminal("没有识别到可执行的依赖编号。")
-            return "break"
-
-        selected_indexes: list[int] = []
-        invalid_tokens: list[str] = []
-        for token in tokens:
-            if not token.isdigit():
-                invalid_tokens.append(token)
-                continue
-            value = int(token)
-            if value < 1 or value > len(self.dependency_entries):
-                invalid_tokens.append(token)
-                continue
-            if value not in selected_indexes:
-                selected_indexes.append(value)
-
-        if invalid_tokens:
-            self._append_dependency_terminal(f"无效命令：{', '.join(invalid_tokens)}")
-            return "break"
-
-        selected_entries = [dict(self.dependency_entries[index - 1]) for index in selected_indexes]
-        self._install_selected_dependencies(selected_entries)
-        return "break"
-
     def _install_selected_dependencies(self, entries: list[dict[str, object]]) -> None:
         if not entries:
-            self._append_dependency_terminal("没有可安装的依赖。")
+            self.set_status("没有可安装的依赖。", tone="warning")
             return
 
         task_names = [str(entry.get("title") or entry.get("id") or "依赖") for entry in entries]
@@ -4765,6 +4644,12 @@ class DesktopClient:
         self._set_dependency_manager_controls_enabled(False)
         self.dependency_feedback_label.configure(text=status_text)
         self.set_status(status_text)
+        if self.dependency_manager_status_label is not None and self.dependency_manager_status_label.winfo_exists():
+            self.dependency_manager_status_label.configure(text=status_text)
+        for entry in entries:
+            entry_id = str(entry.get("id") or "")
+            if entry_id:
+                self._set_dependency_card_progress(entry_id, "状态：等待安装任务开始", 0.02, tone="active")
 
         def worker():
             completed: list[dict[str, object]] = []
@@ -4775,7 +4660,7 @@ class DesktopClient:
                         (
                             "success",
                             self._handle_dependency_manager_event,
-                            {"type": "log", "message": f"已跳过：{title}（当前已安装）"},
+                            {"type": "log", "entry": dict(entry), "message": f"已跳过：{title}（当前已安装）"},
                         )
                     )
                     completed.append(entry)
@@ -4785,7 +4670,7 @@ class DesktopClient:
                     (
                         "success",
                         self._handle_dependency_manager_event,
-                        {"type": "log", "message": f"开始安装：{title}"},
+                        {"type": "log", "entry": dict(entry), "message": f"开始安装：{title}"},
                     )
                 )
 
@@ -4804,7 +4689,7 @@ class DesktopClient:
                     (
                         "success",
                         self._handle_dependency_manager_event,
-                        {"type": "log", "message": f"安装完成：{title}"},
+                        {"type": "log", "entry": dict(entry), "message": f"安装完成：{title}"},
                     )
                 )
             return completed
@@ -4818,7 +4703,8 @@ class DesktopClient:
             summary = f"依赖处理完成：{summary_names}"
             self.dependency_feedback_label.configure(text=summary)
             self.set_status(summary, tone="success")
-            self._append_dependency_terminal(summary)
+            if self.dependency_manager_status_label is not None and self.dependency_manager_status_label.winfo_exists():
+                self.dependency_manager_status_label.configure(text=summary)
 
         def on_error(exc: Exception) -> None:
             self.runtime_busy = False
@@ -4828,7 +4714,8 @@ class DesktopClient:
             message = str(exc)
             self.dependency_feedback_label.configure(text=message)
             self.set_status(message, tone="error")
-            self._append_dependency_terminal(f"错误：{message}")
+            if self.dependency_manager_status_label is not None and self.dependency_manager_status_label.winfo_exists():
+                self.dependency_manager_status_label.configure(text=message)
             messagebox.showerror("依赖安装失败", message)
 
         self._run_worker(worker, on_success, on_error)
@@ -4836,10 +4723,10 @@ class DesktopClient:
     def _uninstall_dependency_model(self, entry: dict[str, object]) -> None:
         model_name = str(entry.get("model_name") or entry.get("title") or "").strip()
         if not model_name:
-            self._append_dependency_terminal("没有识别到可卸载的模型。")
+            self.set_status("没有识别到可卸载的模型。", tone="warning")
             return
         if not bool(entry.get("installed")):
-            self._append_dependency_terminal(f"已跳过：{model_name}（当前未安装）")
+            self.set_status(f"已跳过：{model_name}（当前未安装）", tone="warning")
             return
         if not messagebox.askyesno("卸载模型", f"确定卸载模型 {model_name} 吗？"):
             return
@@ -4852,7 +4739,9 @@ class DesktopClient:
         self._set_dependency_manager_controls_enabled(False)
         self.dependency_feedback_label.configure(text=status_text)
         self.set_status(status_text)
-        self._append_dependency_terminal(status_text)
+        if self.dependency_manager_status_label is not None and self.dependency_manager_status_label.winfo_exists():
+            self.dependency_manager_status_label.configure(text=status_text)
+        self._set_dependency_card_progress(str(entry.get("id") or ""), f"状态：{status_text}", 0.18, tone="active")
 
         def worker():
             return launcher_core.remove_model_with_progress(model_name)
@@ -4866,7 +4755,8 @@ class DesktopClient:
             message = f"模型已卸载：{model_name}"
             self.dependency_feedback_label.configure(text=message)
             self.set_status(message, tone="success")
-            self._append_dependency_terminal(message)
+            if self.dependency_manager_status_label is not None and self.dependency_manager_status_label.winfo_exists():
+                self.dependency_manager_status_label.configure(text=message)
 
         def on_error(exc: Exception) -> None:
             self.runtime_busy = False
@@ -4876,7 +4766,8 @@ class DesktopClient:
             message = str(exc)
             self.dependency_feedback_label.configure(text=message)
             self.set_status(message, tone="error")
-            self._append_dependency_terminal(f"错误：{message}")
+            if self.dependency_manager_status_label is not None and self.dependency_manager_status_label.winfo_exists():
+                self.dependency_manager_status_label.configure(text=message)
             messagebox.showerror("卸载模型失败", message)
 
         self._run_worker(worker, on_success, on_error)

@@ -35,3 +35,20 @@ def test_model_list_cache_reused_during_runtime_refresh(repo_modules, monkeypatc
     assert client.list_chat_models() == ["qwen2.5:7b"]
     assert client.list_embedding_models() == ["nomic-embed-text"]
     assert len(calls) == 1
+
+
+def test_model_lists_do_not_cross_fill_missing_model_types(repo_modules, monkeypatch):
+    import ollama_client
+
+    client = importlib.reload(ollama_client)
+
+    monkeypatch.setattr(
+        client,
+        "_get_json",
+        lambda path, *, timeout=5.0: {"models": [{"name": "nomic-embed-text:latest", "details": {"family": "bert"}}]},
+    )
+
+    client.init_runtime_settings(force_refresh=True)
+
+    assert client.list_chat_models() == []
+    assert client.list_embedding_models() == ["nomic-embed-text:latest"]

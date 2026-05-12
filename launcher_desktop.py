@@ -48,6 +48,8 @@ CONTROL_HOST = "127.0.0.1"
 CONTROL_PORT = 18000 + (zlib.crc32(str(launcher_core.ROOT_DIR).lower().encode("utf-8")) % 1000)
 STATE_PATH = DESKTOP_STATE_PATH
 MAX_CHAT_ITEMS = 200
+NO_CHAT_MODEL_TEXT = "未安装对话模型"
+NO_EMBED_MODEL_TEXT = "未安装向量模型"
 APP_ICON_ICO = launcher_core.ROOT_DIR / "packaging" / "assets" / "app.ico"
 APP_ICON_PNG_PATHS = (
     launcher_core.ROOT_DIR / "icon.png",
@@ -1103,6 +1105,20 @@ class RoundedBubble(tk.Canvas):
         self.radius = radius
         self.pad_x = pad_x
         self.pad_y = pad_y
+        self.text_widget = tk.Text(
+            self,
+            wrap="word",
+            relief="flat",
+            bd=0,
+            highlightthickness=0,
+            padx=0,
+            pady=0,
+            font=self.font,
+            cursor="xterm",
+            takefocus=True,
+        )
+        self.text_widget.insert("1.0", self.text_value)
+        self.text_widget.configure(state="disabled")
         self._redraw()
 
     def _redraw(self) -> None:
@@ -1128,15 +1144,22 @@ class RoundedBubble(tk.Canvas):
         self.delete("all")
         points = _rounded_polygon_points(1, 1, width - 1, height - 1, self.radius)
         self.create_polygon(points, smooth=True, splinesteps=36, fill=self.fill, outline=self.outline, width=1)
-        self.create_text(
+        self.text_widget.configure(
+            bg=self.fill,
+            fg=self.fg,
+            insertbackground=self.fg,
+            selectbackground="#1d76ff",
+            selectforeground="#ffffff",
+            inactiveselectbackground="#1d76ff",
+        )
+        self.text_widget.tag_raise("sel")
+        self.create_window(
             self.pad_x,
             self.pad_y,
-            text=self.text_value,
-            fill=self.fg,
-            font=self.font,
+            window=self.text_widget,
             anchor="nw",
-            justify="left",
-            width=self.wraplength,
+            width=max(40, width - self.pad_x * 2),
+            height=max(20, height - self.pad_y * 2),
         )
 
     def set_colors(self, *, fill: str, fg: str, outline: str, outer_bg: str) -> None:
@@ -1369,6 +1392,8 @@ class DesktopClient:
         self.dependency_entries: list[dict[str, object]] = []
         self.dependency_progress_widgets: dict[str, dict[str, tk.Widget]] = {}
         self.dependency_last_status_text = ""
+        self.dependency_install_queue: list[dict[str, object]] = []
+        self.active_dependency_entry_ids: set[str] = set()
 
         self.surface_roles: list[tuple[tk.Widget, str]] = []
         self.label_roles: list[tuple[tk.Label, str]] = []
@@ -1840,6 +1865,7 @@ class DesktopClient:
             undo=True,
         )
         self.question_input.grid(row=0, column=0, sticky="nsew")
+        self._configure_text_selection(self.question_input)
         self.text_widgets.append(self.question_input)
         self.question_input.bind("<Return>", self._chat_return_shortcut, add="+")
         self.question_input.bind("<KP_Enter>", self._chat_return_shortcut, add="+")
@@ -1976,6 +2002,7 @@ class DesktopClient:
         self.editor_text.bind("<ButtonRelease-1>", self._update_current_line_highlight, add="+")
         self.editor_text.bind("<FocusIn>", self._update_current_line_highlight, add="+")
         self.editor_text.tag_configure("current_line", background=blend_hex(self.palette.chip_bg, self.palette.panel_bg, 0.35))
+        self._configure_text_selection(self.editor_text)
         self.text_widgets.append(self.editor_text)
 
     def _build_settings_page(self) -> None:
@@ -2397,6 +2424,17 @@ class DesktopClient:
         enabled = self.current_account is not None and not self.chat_busy and not self.runtime_busy and not self.model_busy
         self._set_button_enabled(self.send_button, enabled)
 
+    def _configure_text_selection(self, widget: tk.Text) -> None:
+        widget.configure(
+            selectbackground=self.palette.accent,
+            selectforeground="#ffffff",
+            inactiveselectbackground=self.palette.accent,
+        )
+        try:
+            widget.tag_raise("sel")
+        except tk.TclError:
+            pass
+
     def _current_editor_signature(self) -> tuple[str, str]:
         title = str(self.editor_title_var.get() if hasattr(self, "editor_title_var") else "").strip()
         body = str(self.editor_text.get("1.0", "end").strip() if hasattr(self, "editor_text") else "")
@@ -2416,6 +2454,7 @@ class DesktopClient:
         editing = self.editor_mode == "edit"
         self.editor_title_entry.configure(state="normal" if editing else "readonly")
         self.editor_text.configure(state="normal" if editing else "disabled", cursor="xterm" if editing else "arrow")
+        self._configure_text_selection(self.editor_text)
         self._set_badge(self.editor_status_badge, "编辑模式" if editing else "预览模式", "accent" if editing else "neutral")
         self.editor_edit_button.configure(text="取消编辑" if editing else "编辑")
         self._set_button_enabled(self.editor_edit_button, True)
@@ -3666,6 +3705,12 @@ class DesktopClient:
                     outline=bubble_outline,
                     outer_bg=self.palette.panel_alt,
                 )
+                chat_visual["bubble"].text_widget.configure(
+                    selectbackground=self.palette.accent,
+                    inactiveselectbackground=self.palette.accent,
+                    selectforeground="#ffffff",
+                )
+                chat_visual["bubble"].text_widget.tag_raise("sel")
                 chat_visual["meta"].configure(bg=self.palette.panel_alt, fg=self.palette.muted)
 
     def render_chat_history(self) -> None:
@@ -3734,6 +3779,12 @@ class DesktopClient:
                 pad_y=14,
             )
             bubble.pack(anchor="e" if is_user else "w")
+            bubble.text_widget.configure(
+                selectbackground=self.palette.accent,
+                inactiveselectbackground=self.palette.accent,
+                selectforeground="#ffffff",
+            )
+            bubble.text_widget.tag_raise("sel")
 
             meta_text = format_time(item.get("time"))
             if not is_user:
@@ -3931,6 +3982,26 @@ class DesktopClient:
                     available_embed_models = list_embedding_models()
             except Exception as exc:
                 payload["runtime_model_error"] = str(exc)
+            if not available_models and not available_embed_models:
+                installed_model_names = launcher_core.list_private_models_from_store()
+                available_models = [
+                    name
+                    for name in installed_model_names
+                    if not is_embedding_model_entry({"name": name})
+                ]
+                available_embed_models = [
+                    name
+                    for name in installed_model_names
+                    if is_embedding_model_entry({"name": name})
+                ]
+            if available_models and runtime_model not in available_models:
+                runtime_model = launcher_core.DEFAULT_LLM_MODEL if launcher_core.DEFAULT_LLM_MODEL in available_models else available_models[0]
+            if available_embed_models and runtime_embed_model not in available_embed_models:
+                runtime_embed_model = (
+                    launcher_core.DEFAULT_EMBED_MODEL
+                    if launcher_core.DEFAULT_EMBED_MODEL in available_embed_models
+                    else available_embed_models[0]
+                )
             payload["runtime_model"] = runtime_model
             payload["runtime_embed_model"] = runtime_embed_model
             payload["available_models"] = available_models
@@ -3974,7 +4045,6 @@ class DesktopClient:
         gpu_hardware_names = list(gpu_profile.get("hardware_names") or [])
         gpu_hardware_available = bool(gpu_profile.get("hardware_available"))
 
-        self._set_model_chip(str(payload.get("runtime_model") or launcher_core.get_saved_llm_model()))
         self._set_badge(self.runtime_desktop_value, "运行中", "good")
         self._set_badge(self.runtime_ollama_value, self._describe_ollama_status(ollama_state), self._ollama_tone(ollama_state))
         if gpu_installed and gpu_hardware_available:
@@ -3995,8 +4065,15 @@ class DesktopClient:
             self._describe_runtime_profile_badge(selected_profile, environment, gpu_hardware_names),
             "accent" if selected_profile == "gpu" else "neutral",
         )
-        self._set_badge(self.runtime_model_value, str(payload.get("runtime_model") or "未知"), "accent")
-        self._set_badge(self.runtime_embed_model_value, str(payload.get("runtime_embed_model") or "未知"), "neutral")
+        available_models = list(payload.get("available_models") or [])
+        available_embed_models = list(payload.get("available_embed_models") or [])
+        runtime_model = str(payload.get("runtime_model") or launcher_core.get_saved_llm_model()).strip()
+        runtime_embed_model = str(payload.get("runtime_embed_model") or launcher_core.get_saved_embed_model()).strip()
+        display_model = runtime_model if runtime_model in available_models else NO_CHAT_MODEL_TEXT
+        display_embed_model = runtime_embed_model if runtime_embed_model in available_embed_models else NO_EMBED_MODEL_TEXT
+        self._set_model_chip(display_model)
+        self._set_badge(self.runtime_model_value, display_model, "accent" if available_models else "warning")
+        self._set_badge(self.runtime_embed_model_value, display_embed_model, "neutral" if available_embed_models else "warning")
 
         lines = [
             f"project_root : {environment.get('project_root') or '-'}",
@@ -4022,24 +4099,20 @@ class DesktopClient:
 
         self.runtime_mode_button.configure(text=(launcher_core.RUNTIME_PROFILE_SHORT_LABELS.get(selected_profile, selected_profile.upper())))
 
-        available_models = list(payload.get("available_models") or [])
-        available_embed_models = list(payload.get("available_embed_models") or [])
-        runtime_model = str(payload.get("runtime_model") or launcher_core.get_saved_llm_model())
-        runtime_embed_model = str(payload.get("runtime_embed_model") or launcher_core.get_saved_embed_model())
-        model_values = available_models[:] if available_models else [runtime_model]
-        if runtime_model and runtime_model not in model_values:
+        model_values = available_models[:]
+        if runtime_model and runtime_model in available_models and runtime_model not in model_values:
             model_values.insert(0, runtime_model)
-        embed_model_values = available_embed_models[:] if available_embed_models else [runtime_embed_model]
-        if runtime_embed_model and runtime_embed_model not in embed_model_values:
+        embed_model_values = available_embed_models[:]
+        if runtime_embed_model and runtime_embed_model in available_embed_models and runtime_embed_model not in embed_model_values:
             embed_model_values.insert(0, runtime_embed_model)
 
         self.model_event_suppressed = True
-        self.model_combo.configure(values=model_values)
-        self.model_var.set(runtime_model)
+        self.model_combo.configure(values=model_values if model_values else [NO_CHAT_MODEL_TEXT])
+        self.model_var.set(runtime_model if runtime_model in model_values else NO_CHAT_MODEL_TEXT)
         self.model_event_suppressed = False
         self.embed_model_event_suppressed = True
-        self.embed_model_combo.configure(values=embed_model_values)
-        self.embed_model_var.set(runtime_embed_model)
+        self.embed_model_combo.configure(values=embed_model_values if embed_model_values else [NO_EMBED_MODEL_TEXT])
+        self.embed_model_var.set(runtime_embed_model if runtime_embed_model in embed_model_values else NO_EMBED_MODEL_TEXT)
         self.embed_model_event_suppressed = False
 
         self.model_combo.configure(state="readonly" if model_values else "disabled")
@@ -4219,14 +4292,32 @@ class DesktopClient:
             return max(0.0, min(1.0, float(completed) / float(total)))
         return None
 
-    def _set_dependency_card_progress(self, entry_id: str, text: str, percent: float | None = None, *, tone: str = "active") -> None:
+    def _set_dependency_card_progress(
+        self,
+        entry_id: str,
+        text: str,
+        percent: float | None = None,
+        *,
+        tone: str = "active",
+        button_text: str | None = None,
+        button_enabled: bool | None = None,
+    ) -> None:
         widgets = self.dependency_progress_widgets.get(entry_id)
         if not widgets:
             return
         label = widgets.get("label")
         fill = widgets.get("fill")
+        button = widgets.get("button")
         if isinstance(label, tk.Label) and label.winfo_exists():
             label.configure(text=text)
+        if button is not None:
+            try:
+                if button_text is not None:
+                    button.configure(text=button_text)
+                if button_enabled is not None:
+                    self._set_button_enabled(button, button_enabled)
+            except tk.TclError:
+                pass
         if isinstance(fill, tk.Frame) and fill.winfo_exists():
             if percent is None:
                 percent = 0.08 if tone == "active" else 0.0
@@ -4237,6 +4328,74 @@ class DesktopClient:
                 color = self.palette.danger
             fill.configure(bg=color)
             fill.place_configure(relwidth=max(0.0, min(1.0, percent)))
+
+    def _refresh_queued_dependency_cards(self) -> None:
+        for index, entry in enumerate(self.dependency_install_queue, start=1):
+            entry_id = str(entry.get("id") or "")
+            if not entry_id:
+                continue
+            self._set_dependency_card_progress(
+                entry_id,
+                f"状态：等待安装（队列第 {index} 个）",
+                0.02,
+                tone="active",
+                button_text="等待安装",
+                button_enabled=False,
+            )
+
+    def _queue_dependency_install(self, entry: dict[str, object]) -> None:
+        entry_id = str(entry.get("id") or "")
+        title = str(entry.get("title") or entry_id or "依赖")
+        if not entry_id:
+            self.set_status("没有识别到可安装的依赖。", tone="warning")
+            return
+        if entry_id in self.active_dependency_entry_ids:
+            message = f"{title} 正在安装中。"
+            self._set_dependency_card_progress(
+                entry_id,
+                f"状态：{message}",
+                None,
+                tone="active",
+                button_text="安装中",
+                button_enabled=False,
+            )
+            self.set_status(message, tone="warning")
+            return
+        if any(str(item.get("id") or "") == entry_id for item in self.dependency_install_queue):
+            queue_index = next(
+                index
+                for index, item in enumerate(self.dependency_install_queue, start=1)
+                if str(item.get("id") or "") == entry_id
+            )
+            message = f"{title} 已在等待安装（队列第 {queue_index} 个）。"
+            self._set_dependency_card_progress(
+                entry_id,
+                f"状态：{message}",
+                0.02,
+                tone="active",
+                button_text="等待安装",
+                button_enabled=False,
+            )
+            self.set_status(message, tone="warning")
+            return
+        self.dependency_install_queue.append(dict(entry))
+        self._refresh_queued_dependency_cards()
+        message = f"已加入等待安装：{title}（队列第 {len(self.dependency_install_queue)} 个）"
+        self.set_status(message)
+        self.dependency_feedback_label.configure(text=message)
+        if self.dependency_manager_status_label is not None and self.dependency_manager_status_label.winfo_exists():
+            self.dependency_manager_status_label.configure(text=message)
+
+    def _start_next_queued_dependency(self) -> bool:
+        while self.dependency_install_queue:
+            next_entry = self.dependency_install_queue.pop(0)
+            entry_id = str(next_entry.get("id") or "")
+            if bool(next_entry.get("installed")):
+                continue
+            self._refresh_queued_dependency_cards()
+            self._install_selected_dependencies([dict(next_entry)])
+            return True
+        return False
 
     def _dependency_model_entries(self) -> list[dict[str, object]]:
         entries: list[dict[str, object]] = []
@@ -4279,7 +4438,14 @@ class DesktopClient:
                 if entry_id:
                     tone = "done" if "完成" in message else "active"
                     percent = 1.0 if tone == "done" else 0.08
-                    self._set_dependency_card_progress(entry_id, f"状态：{message}", percent, tone=tone)
+                    self._set_dependency_card_progress(
+                        entry_id,
+                        f"状态：{message}",
+                        percent,
+                        tone=tone,
+                        button_text="已安装" if tone == "done" else "安装中",
+                        button_enabled=False,
+                    )
             return
 
         if event_type == "progress":
@@ -4296,7 +4462,14 @@ class DesktopClient:
             self.dependency_feedback_label.configure(text=text)
             entry_id = str(entry.get("id") or "")
             if entry_id:
-                self._set_dependency_card_progress(entry_id, text, self._dependency_progress_percent(event), tone="active")
+                self._set_dependency_card_progress(
+                    entry_id,
+                    text,
+                    self._dependency_progress_percent(event),
+                    tone="active",
+                    button_text="安装中",
+                    button_enabled=False,
+                )
 
     def open_dependency_manager_window(self) -> None:
         if self.dependency_manager_window is not None and self.dependency_manager_window.winfo_exists():
@@ -4401,7 +4574,7 @@ class DesktopClient:
 
     def _install_single_dependency(self, entry: dict[str, object]) -> None:
         if self.runtime_busy or self.model_busy:
-            self.set_status("当前已有任务在执行，请稍后再试。", tone="warning")
+            self._queue_dependency_install(dict(entry))
             return
         self._install_selected_dependencies([dict(entry)])
 
@@ -4593,6 +4766,7 @@ class DesktopClient:
                     self.dependency_progress_widgets[entry_id] = {
                         "label": progress_label,
                         "fill": progress_fill,
+                        "button": action_button,
                     }
 
                 hint_label = tk.Label(
@@ -4622,6 +4796,7 @@ class DesktopClient:
         task_names = [str(entry.get("title") or entry.get("id") or "依赖") for entry in entries]
         status_text = f"正在处理依赖：{'、'.join(task_names)}"
         self.runtime_busy = True
+        self.active_dependency_entry_ids = {str(entry.get("id") or "") for entry in entries if str(entry.get("id") or "")}
         self._sync_send_button_state()
         if self.settings_payload is not None:
             self._update_runtime_buttons(self.settings_payload.get("ollama", {}), self.model_var.get().strip())
@@ -4633,7 +4808,14 @@ class DesktopClient:
         for entry in entries:
             entry_id = str(entry.get("id") or "")
             if entry_id:
-                self._set_dependency_card_progress(entry_id, "状态：等待安装任务开始", 0.02, tone="active")
+                self._set_dependency_card_progress(
+                    entry_id,
+                    "状态：等待安装任务开始",
+                    0.02,
+                    tone="active",
+                    button_text="安装中",
+                    button_enabled=False,
+                )
 
         def worker():
             completed: list[dict[str, object]] = []
@@ -4680,7 +4862,10 @@ class DesktopClient:
 
         def on_success(completed: list[dict[str, object]]) -> None:
             self.runtime_busy = False
+            self.active_dependency_entry_ids = set()
             self._sync_send_button_state()
+            if self._start_next_queued_dependency():
+                return
             self.refresh_settings_status(silent=True)
             self.refresh_dependency_manager_window(announce=False)
             summary_names = "、".join(str(item.get("title") or item.get("id") or "依赖") for item in completed)
@@ -4692,10 +4877,24 @@ class DesktopClient:
 
         def on_error(exc: Exception) -> None:
             self.runtime_busy = False
+            failed_ids = set(self.active_dependency_entry_ids)
+            self.active_dependency_entry_ids = set()
             self._sync_send_button_state()
+            message = str(exc)
+            for entry_id in failed_ids:
+                self._set_dependency_card_progress(
+                    entry_id,
+                    f"状态：安装失败：{message}",
+                    None,
+                    tone="error",
+                    button_text="重试",
+                    button_enabled=True,
+                )
+            if self._start_next_queued_dependency():
+                messagebox.showerror("依赖安装失败", message)
+                return
             self.refresh_settings_status(silent=True)
             self.refresh_dependency_manager_window(announce=False)
-            message = str(exc)
             self.dependency_feedback_label.configure(text=message)
             self.set_status(message, tone="error")
             if self.dependency_manager_status_label is not None and self.dependency_manager_status_label.winfo_exists():
@@ -6069,6 +6268,7 @@ class DesktopClient:
                 highlightbackground=self.palette.border,
                 highlightcolor=self.palette.border,
             )
+            self._configure_text_selection(text)
 
         for entry in self.entry_widgets:
             entry.configure(
@@ -6090,6 +6290,7 @@ class DesktopClient:
         if hasattr(self, "editor_text"):
             self.editor_text.tag_configure("current_line", background=blend_hex(self.palette.chip_bg, self.palette.panel_bg, 0.35))
             self.editor_text.tag_configure("search_match", background=blend_hex(self.palette.accent, self.palette.panel_bg, 0.72), foreground=self.palette.text)
+            self._configure_text_selection(self.editor_text)
         self.model_chip.configure(bg=self.palette.chip_bg, fg=self.palette.chip_fg)
         self.status_line.configure(bg=self.palette.root_bg)
 

@@ -89,8 +89,7 @@ def _is_embedding_model(model_info: dict) -> bool:
 def _partition_model_names(models: list[dict]) -> tuple[list[str], list[str]]:
     chat_models = [str(model.get("name") or "") for model in models if model.get("name") and not _is_embedding_model(model)]
     embed_models = [str(model.get("name") or "") for model in models if model.get("name") and _is_embedding_model(model)]
-    fallback = [str(model.get("name") or "") for model in models if model.get("name")]
-    return (chat_models or fallback, embed_models or fallback)
+    return chat_models, embed_models
 
 
 def init_runtime_settings(*, force_refresh: bool = False) -> None:

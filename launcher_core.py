@@ -768,6 +768,8 @@ def _download_file(url: str, target_path: Path, *, label: str, progress_callback
                     "total": total or completed,
                 },
             )
+            if total and completed != total:
+                raise RuntimeError(f"下载不完整：{label}（已下载 {completed} / {total} 字节）")
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise RuntimeError(f"下载失败：{label} ({url})") from exc
 
@@ -776,7 +778,12 @@ def _extract_zip(archive_path: Path, target_dir: Path, *, label: str, progress_c
     _emit_progress(progress_callback, {"phase": "extract", "status": f"正在解压 {label}", "label": label})
     try:
         with zipfile.ZipFile(archive_path) as archive:
+            bad_file = archive.testzip()
+            if bad_file:
+                raise RuntimeError(f"压缩包校验失败：{archive_path.name} ({bad_file})")
             archive.extractall(target_dir)
+    except RuntimeError:
+        raise
     except (OSError, zipfile.BadZipFile) as exc:
         raise RuntimeError(f"解压失败：{archive_path.name}") from exc
     _emit_progress(progress_callback, {"phase": "extract", "status": f"已解压 {label}", "label": label})
@@ -1030,38 +1037,36 @@ def list_managed_dependencies() -> list[dict[str, Any]]:
         }
     )
 
-    gpu_core_installed = gpu_runtime_core_installed()
+    gpu_core_ready = gpu_runtime_core_installed()
+    gpu_accel_ready = gpu_acceleration_installed()
+    gpu_runtime_ready = gpu_core_ready and gpu_accel_ready
+    if gpu_runtime_ready:
+        gpu_status_text = "已安装"
+        gpu_hint_detail = "当前检测：基础运行时和加速库均已安装。"
+    elif gpu_core_ready:
+        gpu_status_text = "缺少加速库"
+        gpu_hint_detail = "当前检测：基础运行时已安装，缺少 CUDA / Vulkan / MLX 加速库；点击安装会补齐缺失部分。"
+    elif gpu_accel_ready:
+        gpu_status_text = "缺少基础运行时"
+        gpu_hint_detail = "当前检测：加速库已存在，缺少 GPU 基础运行时；点击安装会补齐缺失部分。"
+    else:
+        gpu_status_text = "未安装"
+        gpu_hint_detail = "当前检测：基础运行时和加速库均未安装。"
     gpu_source_text = "内置包部署" if bool(cpu_state.get("bundled_available")) else ("在线下载" if bool(gpu_state.get("download_supported")) else "当前不可用")
-    dependencies.append(
-        {
-            "id": "runtime:gpu",
-            "kind": "runtime",
-            "title": "Ollama GPU 运行时",
-            "description": "GPU 模式的基础运行时，会部署到独立的 GPU 运行目录。",
-            "installed": gpu_core_installed,
-            "status": "installed" if gpu_core_installed else "missing",
-            "status_text": "已安装" if gpu_core_installed else "未安装",
-            "source_text": gpu_source_text,
-            "hint": f"安装来源：{gpu_source_text}",
-            "profile": "gpu",
-        }
-    )
-
-    gpu_accel_installed = gpu_acceleration_installed()
-    gpu_hint = "安装后可为 GPU 运行时补齐 CUDA / Vulkan / MLX 加速库。"
+    gpu_hint = "安装时会一次性部署 GPU 基础运行时和 CUDA / Vulkan / MLX 加速库。"
     if not bool(gpu_state.get("hardware_available")):
         gpu_hint += " 当前未检测到 NVIDIA GPU。"
     dependencies.append(
         {
-            "id": "runtime:gpu-accel",
+            "id": "runtime:gpu",
             "kind": "runtime",
-            "title": "GPU 加速库",
-            "description": "为 GPU 模式补齐 CUDA、Vulkan 与 MLX 加速文件。",
-            "installed": gpu_accel_installed,
-            "status": "installed" if gpu_accel_installed else "missing",
-            "status_text": "已安装" if gpu_accel_installed else "未安装",
-            "source_text": "内置包部署" if bool(gpu_state.get("bundled_available")) else ("在线下载" if bool(gpu_state.get("download_supported")) else "当前不可用"),
-            "hint": gpu_hint,
+            "title": "Ollama GPU 运行时（含加速库）",
+            "description": "GPU 模式完整运行环境，会一次性部署基础运行时和加速库。",
+            "installed": gpu_runtime_ready,
+            "status": "installed" if gpu_runtime_ready else ("partial" if gpu_core_ready or gpu_accel_ready else "missing"),
+            "status_text": gpu_status_text,
+            "source_text": gpu_source_text,
+            "hint": f"安装来源：{gpu_source_text}；{gpu_hint} {gpu_hint_detail}",
             "profile": "gpu",
         }
     )
@@ -1203,10 +1208,10 @@ def install_managed_dependency(dependency_id: str, progress_callback=None) -> di
             install_runtime_core("cpu", progress_callback=progress_callback)
             return get_status()
         if runtime_key == "gpu":
-            install_runtime_core("gpu", progress_callback=progress_callback)
-            return get_status()
-        if runtime_key == "gpu-accel":
-            install_gpu_acceleration(progress_callback=progress_callback)
+            if not gpu_runtime_core_installed():
+                install_runtime_core("gpu", progress_callback=progress_callback)
+            if not gpu_acceleration_installed():
+                install_gpu_acceleration(progress_callback=progress_callback)
             return get_status()
         raise ValueError(f"Unsupported runtime dependency: {normalized_id}")
 

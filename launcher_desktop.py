@@ -1361,6 +1361,7 @@ class DesktopClient:
         self.account_busy = False
         self.model_busy = False
         self.runtime_busy = False
+        self.dependency_busy = False
         self.model_event_suppressed = False
         self.embed_model_event_suppressed = False
         self.hovered_note_id: int | None = None
@@ -1389,6 +1390,7 @@ class DesktopClient:
         self.dependency_manager_copy_label: tk.Label | None = None
         self.dependency_manager_status_label: tk.Label | None = None
         self.dependency_refresh_button = None
+        self.dependency_action_buttons: list[tk.Widget] = []
         self.dependency_entries: list[dict[str, object]] = []
         self.dependency_progress_widgets: dict[str, dict[str, tk.Widget]] = {}
         self.dependency_last_status_text = ""
@@ -4264,6 +4266,13 @@ class DesktopClient:
     def _set_dependency_manager_controls_enabled(self, enabled: bool) -> None:
         if self.dependency_refresh_button is not None:
             self._set_button_enabled(self.dependency_refresh_button, enabled)
+        for button in list(getattr(self, "dependency_action_buttons", [])):
+            try:
+                if button.winfo_exists():
+                    idle_enabled = bool(getattr(button, "_dependency_enabled_when_idle", True))
+                    self._set_button_enabled(button, enabled and idle_enabled)
+            except tk.TclError:
+                continue
 
     def _dependency_manager_is_open(self) -> bool:
         return self.dependency_manager_window is not None and self.dependency_manager_window.winfo_exists()
@@ -4271,6 +4280,8 @@ class DesktopClient:
     def _dependency_status_tone(self, entry: dict[str, object]) -> str:
         if bool(entry.get("installed")):
             return "good"
+        if str(entry.get("status") or "") == "partial":
+            return "warning"
         if str(entry.get("kind") or "") == "runtime" and str(entry.get("source_text") or "") == "当前不可用":
             return "danger"
         return "neutral"
@@ -4474,8 +4485,6 @@ class DesktopClient:
     def open_dependency_manager_window(self) -> None:
         if self.dependency_manager_window is not None and self.dependency_manager_window.winfo_exists():
             self.dependency_manager_window.deiconify()
-            self.dependency_manager_window.lift()
-            self.dependency_manager_window.focus_force()
             self.refresh_dependency_sources(announce=False)
             return
 
@@ -4484,7 +4493,6 @@ class DesktopClient:
         window.geometry("1080x720")
         window.minsize(960, 640)
         window.configure(bg=self.palette.root_bg)
-        window.transient(self.root)
         window.protocol("WM_DELETE_WINDOW", self._close_dependency_manager_window)
         self.dependency_manager_window = window
 
@@ -4573,13 +4581,16 @@ class DesktopClient:
         self.refresh_model_catalog()
 
     def _install_single_dependency(self, entry: dict[str, object]) -> None:
-        if self.runtime_busy or self.model_busy:
+        if self.dependency_busy:
             self._queue_dependency_install(dict(entry))
+            return
+        if self.runtime_busy or self.model_busy:
+            self.set_status("运行时或模型正在切换，请稍后再试。", tone="warning")
             return
         self._install_selected_dependencies([dict(entry)])
 
     def _remove_single_dependency_model(self, entry: dict[str, object]) -> None:
-        if self.runtime_busy or self.model_busy:
+        if self.dependency_busy or self.runtime_busy or self.model_busy:
             self.set_status("当前已有任务在执行，请稍后再试。", tone="warning")
             return
         self._uninstall_dependency_model(dict(entry))
@@ -4597,6 +4608,7 @@ class DesktopClient:
         self.dependency_manager_copy_label = None
         self.dependency_manager_status_label = None
         self.dependency_refresh_button = None
+        self.dependency_action_buttons = []
         self.dependency_progress_widgets = {}
 
     def refresh_dependency_sources(self, announce: bool = True) -> None:
@@ -4624,6 +4636,7 @@ class DesktopClient:
         self.dependency_manager_list_area.set_colors(self.palette.panel_bg, self.palette)
         self.dependency_manager_list_area.clear()
         self.dependency_progress_widgets = {}
+        self.dependency_action_buttons = []
 
         summary_card = tk.Frame(
             self.dependency_manager_list_area.content,
@@ -4730,8 +4743,32 @@ class DesktopClient:
                         style="Accent.TButton" if not is_installed else "Ghost.TButton",
                     )
                 action_button.pack(side="right")
-                if is_installed and str(entry.get("kind") or "") != "model":
+                self.dependency_action_buttons.append(action_button)
+                entry_id = str(entry.get("id") or "")
+                is_active = entry_id in self.active_dependency_entry_ids
+                queue_index = next(
+                    (
+                        index
+                        for index, queued in enumerate(self.dependency_install_queue, start=1)
+                        if str(queued.get("id") or "") == entry_id
+                    ),
+                    None,
+                )
+                if is_active:
+                    setattr(action_button, "_dependency_enabled_when_idle", False)
+                    action_button.configure(text="安装中")
                     self._set_button_enabled(action_button, False)
+                elif queue_index is not None:
+                    setattr(action_button, "_dependency_enabled_when_idle", False)
+                    action_button.configure(text="等待安装")
+                    self._set_button_enabled(action_button, False)
+                elif is_installed and str(entry.get("kind") or "") != "model":
+                    setattr(action_button, "_dependency_enabled_when_idle", False)
+                    self._set_button_enabled(action_button, False)
+                else:
+                    setattr(action_button, "_dependency_enabled_when_idle", True)
+                    if self.dependency_busy or self.runtime_busy or self.model_busy:
+                        self._set_button_enabled(action_button, False)
 
                 desc_label = tk.Label(
                     card,
@@ -4747,7 +4784,15 @@ class DesktopClient:
 
                 progress_label = tk.Label(
                     card,
-                    text="状态：已安装" if is_installed else "状态：等待安装",
+                    text=(
+                        "状态：安装中"
+                        if is_active
+                        else f"状态：等待安装（队列第 {queue_index} 个）"
+                        if queue_index is not None
+                        else "状态：已安装"
+                        if is_installed
+                        else "状态：等待安装"
+                    ),
                     bg=self.palette.panel_alt,
                     fg=self.palette.muted,
                     font=("Microsoft YaHei UI", 9),
@@ -4760,8 +4805,8 @@ class DesktopClient:
                 progress_shell.pack(fill="x", pady=(6, 0))
                 progress_shell.pack_propagate(False)
                 progress_fill = tk.Frame(progress_shell, bg="#22c55e" if is_installed else self.palette.accent, height=8)
-                progress_fill.place(relx=0, rely=0, relheight=1, relwidth=1.0 if is_installed else 0.0)
-                entry_id = str(entry.get("id") or "")
+                progress_width = 1.0 if is_installed else 0.08 if is_active else 0.02 if queue_index is not None else 0.0
+                progress_fill.place(relx=0, rely=0, relheight=1, relwidth=progress_width)
                 if entry_id:
                     self.dependency_progress_widgets[entry_id] = {
                         "label": progress_label,
@@ -4782,7 +4827,7 @@ class DesktopClient:
                 hint_label.pack(fill="x", pady=(6, 0))
                 entry_index += 1
 
-        self._set_dependency_manager_controls_enabled(not self.runtime_busy and not self.model_busy)
+        self._set_dependency_manager_controls_enabled(not self.dependency_busy and not self.runtime_busy and not self.model_busy)
         if announce:
             message = f"依赖状态已刷新，共 {len(self.dependency_entries)} 项。"
             if self.dependency_manager_status_label is not None and self.dependency_manager_status_label.winfo_exists():
@@ -4795,7 +4840,7 @@ class DesktopClient:
 
         task_names = [str(entry.get("title") or entry.get("id") or "依赖") for entry in entries]
         status_text = f"正在处理依赖：{'、'.join(task_names)}"
-        self.runtime_busy = True
+        self.dependency_busy = True
         self.active_dependency_entry_ids = {str(entry.get("id") or "") for entry in entries if str(entry.get("id") or "")}
         self._sync_send_button_state()
         if self.settings_payload is not None:
@@ -4861,7 +4906,7 @@ class DesktopClient:
             return completed
 
         def on_success(completed: list[dict[str, object]]) -> None:
-            self.runtime_busy = False
+            self.dependency_busy = False
             self.active_dependency_entry_ids = set()
             self._sync_send_button_state()
             if self._start_next_queued_dependency():
@@ -4876,7 +4921,7 @@ class DesktopClient:
                 self.dependency_manager_status_label.configure(text=summary)
 
         def on_error(exc: Exception) -> None:
-            self.runtime_busy = False
+            self.dependency_busy = False
             failed_ids = set(self.active_dependency_entry_ids)
             self.active_dependency_entry_ids = set()
             self._sync_send_button_state()
@@ -4915,7 +4960,7 @@ class DesktopClient:
             return
 
         status_text = f"正在卸载模型：{model_name}"
-        self.runtime_busy = True
+        self.dependency_busy = True
         self._sync_send_button_state()
         if self.settings_payload is not None:
             self._update_runtime_buttons(self.settings_payload.get("ollama", {}), self.model_var.get().strip())
@@ -4930,7 +4975,7 @@ class DesktopClient:
             return launcher_core.remove_model_with_progress(model_name)
 
         def on_success(_payload) -> None:
-            self.runtime_busy = False
+            self.dependency_busy = False
             self._sync_send_button_state()
             self.refresh_settings_status(silent=True)
             self.refresh_model_catalog()
@@ -4942,7 +4987,7 @@ class DesktopClient:
                 self.dependency_manager_status_label.configure(text=message)
 
         def on_error(exc: Exception) -> None:
-            self.runtime_busy = False
+            self.dependency_busy = False
             self._sync_send_button_state()
             self.refresh_settings_status(silent=True)
             self.refresh_dependency_manager_window(announce=False)
@@ -5100,7 +5145,7 @@ class DesktopClient:
                 self.model_manager_status_label.configure(text="模型安装状态已更新。")
             if self.dependency_manager_status_label is not None and self.dependency_manager_status_label.winfo_exists():
                 self.dependency_manager_status_label.configure(text="模型安装状态已更新。")
-            if not self.runtime_busy and not self.model_busy:
+            if not self.dependency_busy and not self.runtime_busy and not self.model_busy:
                 self.refresh_dependency_manager_window(announce=False)
             self._refresh_model_manager_window()
 
@@ -5110,7 +5155,7 @@ class DesktopClient:
                 self.model_manager_status_label.configure(text=str(exc))
             if self.dependency_manager_status_label is not None and self.dependency_manager_status_label.winfo_exists():
                 self.dependency_manager_status_label.configure(text=str(exc))
-            if not self.runtime_busy and not self.model_busy:
+            if not self.dependency_busy and not self.runtime_busy and not self.model_busy:
                 self.refresh_dependency_manager_window(announce=False)
             self._refresh_model_manager_window()
 
@@ -5846,7 +5891,7 @@ class DesktopClient:
         self._set_button_enabled(self.refresh_status_button, not self.runtime_busy)
         if self.manage_models_button is not None:
             self._set_button_enabled(self.manage_models_button, not self.runtime_busy and not self.model_busy)
-        self._set_dependency_manager_controls_enabled(not self.runtime_busy and not self.model_busy)
+        self._set_dependency_manager_controls_enabled(not self.dependency_busy and not self.runtime_busy and not self.model_busy)
 
     def _set_button_enabled(self, button, enabled: bool) -> None:
         if isinstance(button, ttk.Combobox):

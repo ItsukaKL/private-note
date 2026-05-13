@@ -6071,12 +6071,19 @@ class DesktopClient:
         if not allow_same_profile and selected_profile == current_profile and bool(ollama_state.get("private_installed")):
             self.set_status(f"当前已是 {selected_label}。")
             return
-        if not launcher_core.bundled_ollama_available(selected_profile):
-            messagebox.showerror("运行模式缺失", f"{selected_label} 的项目内置运行时当前不存在。")
-            self.set_status(f"{selected_label} 的项目内置运行时缺失。", tone="error")
+        profiles = ((self.settings_payload or {}).get("ollama", {}).get("profiles") or {})
+        selected_state = dict(profiles.get(selected_profile) or {})
+        profile_available = bool(
+            selected_state.get("private_installed")
+            or selected_state.get("bundled_available")
+            or selected_state.get("download_supported")
+        )
+        if not profile_available:
+            messagebox.showerror("运行模式缺失", f"{selected_label} 的运行时当前不可用。")
+            self.set_status(f"{selected_label} 的运行时不可用。", tone="error")
             return
         if selected_profile == "gpu":
-            gpu_profile = ((self.settings_payload or {}).get("ollama", {}).get("profiles") or {}).get("gpu") or {}
+            gpu_profile = profiles.get("gpu") or {}
             if not bool(gpu_profile.get("hardware_available")):
                 if not messagebox.askyesno("未检测到 GPU", "当前未检测到可用 NVIDIA GPU，继续切换到 GPU 模式吗？"):
                     return

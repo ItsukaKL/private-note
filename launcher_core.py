@@ -32,9 +32,10 @@ SYSTEM_OLLAMA_BASE_URL = f"http://{SYSTEM_OLLAMA_HOST}:{SYSTEM_OLLAMA_PORT}"
 OLLAMA_LIBRARY_BASE_URL = os.getenv("OLLAMA_LIBRARY_BASE_URL", "https://ollama.com")
 SYSTEM_OLLAMA_APP_PATH = Path.home() / "AppData" / "Local" / "Programs" / "Ollama" / "ollama app.exe"
 OLLAMA_RUNTIME_VERSION = "0.20.2"
+PROJECT_RELEASE_RUNTIME_VERSION = "0.1.5"
 OLLAMA_RUNTIME_RELEASE_BASE_URL = os.getenv(
     "OLLAMA_RUNTIME_RELEASE_BASE_URL",
-    f"https://github.com/ollama/ollama/releases/download/v{OLLAMA_RUNTIME_VERSION}",
+    f"https://github.com/ItsukaKL/private-note/releases/latest/download",
 )
 DEFAULT_RUNTIME_PROFILE = "cpu"
 RUNTIME_PROFILE_LABELS = {
@@ -80,8 +81,8 @@ RUNTIME_PROFILES = {
         "accelerator": "cpu",
         "download_assets": (
             {
-                "filename": "ollama-windows-amd64.zip",
-                "label": "Ollama Windows 运行时",
+                "filename": f"PrivateNote-ollama-windows-amd64-cpu-{OLLAMA_RUNTIME_VERSION}.zip",
+                "label": "Private Note Ollama CPU 运行时",
             },
         ),
     },
@@ -94,12 +95,28 @@ RUNTIME_PROFILES = {
         "accelerator": "nvidia",
         "download_assets": (
             {
-                "filename": "ollama-windows-amd64.zip",
-                "label": "Ollama Windows 运行时",
+                "filename": f"PrivateNote-ollama-windows-amd64-cpu-{OLLAMA_RUNTIME_VERSION}.zip",
+                "label": "Private Note Ollama CPU 运行时",
             },
             {
-                "filename": "ollama-windows-amd64-mlx.zip",
-                "label": "Ollama CUDA 扩展",
+                "filename": f"PrivateNote-ollama-gpu-cuda-v12-core-{OLLAMA_RUNTIME_VERSION}.zip",
+                "label": "Private Note Ollama GPU CUDA 12 核心库",
+            },
+            {
+                "filename": f"PrivateNote-ollama-gpu-cuda-v12-deps-{OLLAMA_RUNTIME_VERSION}.zip",
+                "label": "Private Note Ollama GPU CUDA 12 依赖库",
+            },
+            {
+                "filename": f"PrivateNote-ollama-gpu-cuda-v13-{OLLAMA_RUNTIME_VERSION}.zip",
+                "label": "Private Note Ollama GPU CUDA 13 加速库",
+            },
+            {
+                "filename": f"PrivateNote-ollama-gpu-mlx-cuda-v13-{OLLAMA_RUNTIME_VERSION}.zip",
+                "label": "Private Note Ollama GPU MLX CUDA 13 加速库",
+            },
+            {
+                "filename": f"PrivateNote-ollama-gpu-vulkan-{OLLAMA_RUNTIME_VERSION}.zip",
+                "label": "Private Note Ollama GPU Vulkan 加速库",
             },
         ),
     },
@@ -720,6 +737,18 @@ def _runtime_download_url(filename: str) -> str:
     return f"{OLLAMA_RUNTIME_RELEASE_BASE_URL}/{filename}"
 
 
+def _runtime_asset(filename: str, label: str) -> dict[str, str]:
+    return {"filename": filename, "label": label}
+
+
+def _runtime_cpu_assets() -> tuple[dict[str, str], ...]:
+    return tuple(_runtime_download_assets("cpu"))
+
+
+def _runtime_gpu_acceleration_assets() -> tuple[dict[str, str], ...]:
+    return tuple(_runtime_download_assets("gpu")[1:])
+
+
 def _download_file(url: str, target_path: Path, *, label: str, progress_callback=None) -> None:
     target_path.parent.mkdir(parents=True, exist_ok=True)
     request = urllib.request.Request(url, headers={"User-Agent": "private-note-desktop"})
@@ -928,12 +957,7 @@ def install_runtime_core(profile: str, progress_callback=None) -> str:
             _emit_progress(progress_callback, {"phase": "prepare", "status": "正在部署 CPU 运行时", "label": "CPU 运行时"})
             return str(_copy_bundled_runtime("cpu", target_dir))
         return _download_runtime_assets_to_dir(
-            assets=(
-                {
-                    "filename": "ollama-windows-amd64.zip",
-                    "label": "Ollama Windows 运行时",
-                },
-            ),
+            assets=_runtime_cpu_assets(),
             required_files=CPU_OLLAMA_REQUIRED_FILES,
             target_dir=target_dir,
             merge=False,
@@ -949,12 +973,7 @@ def install_runtime_core(profile: str, progress_callback=None) -> str:
             shutil.copytree(bundled_cpu_source, target_dir)
             return str(bundled_cpu_source)
         return _download_runtime_assets_to_dir(
-            assets=(
-                {
-                    "filename": "ollama-windows-amd64.zip",
-                    "label": "Ollama Windows 运行时",
-                },
-            ),
+            assets=_runtime_cpu_assets(),
             required_files=CPU_OLLAMA_REQUIRED_FILES,
             target_dir=target_dir,
             merge=False,
@@ -976,12 +995,7 @@ def install_gpu_acceleration(progress_callback=None) -> str:
         return str(bundled_gpu_source)
 
     return _download_runtime_assets_to_dir(
-        assets=(
-            {
-                "filename": "ollama-windows-amd64-mlx.zip",
-                "label": "Ollama GPU 加速库",
-            },
-        ),
+        assets=_runtime_gpu_acceleration_assets(),
         required_files=GPU_ACCELERATION_REQUIRED_FILES,
         target_dir=target_dir,
         merge=True,

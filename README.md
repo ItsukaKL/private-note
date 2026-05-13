@@ -146,7 +146,7 @@ just test
 - Python 3.10+：可选；仅当你不使用仓库内置 Python，而要自己用源码开发环境运行时需要。
 - `uv`：可选；用于根据 `pyproject.toml` / `uv.lock` 创建 `.venv/` 并安装依赖。
 - `just`：可选；只在使用 `just sync`、`just test`、`just build`、`just portable` 这些快捷命令时需要。
-- Ollama 运行时：可在客户端设置页的“管理依赖”里安装，也可以手动准备到 `runtime/` 或 `vendor/`。默认固定版本为 `0.20.2`，CPU 模式使用 `ollama-windows-amd64.zip`，GPU 模式还需要 `ollama-windows-amd64-mlx.zip`。
+- Ollama 运行时：可在客户端设置页的“管理依赖”里安装，也可以手动准备到 `runtime/` 或 `vendor/`。默认固定版本为 `0.20.2`，客户端默认从本项目 GitHub Release assets 下载 CPU/GPU 运行时分包，不再直接依赖 Ollama 上游 release 地址。
 - 本地模型：问答推荐轻量档 `qwen2.5:3b` 或默认档 `qwen2.5:7b`，向量推荐 `nomic-embed-text`。模型不会进入 Git，需要在客户端内安装，或通过 Ollama 手动拉取。
 - 内置 Python 运行时：已随源码仓库提交，目录为 `vendor/python-3.11.7-embed-amd64/`，包含 Tkinter、`chromadb`、`psutil`、`PyInstaller` 等运行/构建依赖。
 
@@ -262,6 +262,7 @@ PrivateNoteDesktop/PrivateNoteDesktop.exe
 - 网络连接：首次在线安装 Ollama 运行时或拉取模型时需要访问外网；如果目标机器离线，需要提前把运行时和模型准备到对应目录。
 - 磁盘空间：模型文件通常较大，至少预留数 GB 空间；GPU 运行时和多模型场景需要更多空间。
 - GPU 依赖：CPU 模式不需要显卡；GPU 模式仅面向 NVIDIA 环境，并依赖本机显卡驱动可用。
+- 运行时下载源：默认使用本项目 release assets；如需自建镜像，可通过 `OLLAMA_RUNTIME_RELEASE_BASE_URL` 覆盖为兼容的 asset 基础 URL。
 
 源码仓库会跟踪打包所需的 `vendor/python-3.11.7-embed-amd64/`，所以新机器 clone 后可以直接重新打包。
 
@@ -269,6 +270,14 @@ PrivateNoteDesktop/PrivateNoteDesktop.exe
 
 - `vendor/ollama-windows-amd64-cpu-0.20.2/`：CPU 版 Ollama 固定运行时。体积较小，可被打包脚本内置到便携包中，供客户端首次部署 CPU 模式时直接复制。
 - `vendor/ollama-windows-amd64-gpu-nvidia-0.20.2/`：GPU 版 Ollama 固定运行时，包含 CUDA / Vulkan / MLX 加速库。该目录体积很大，不跟踪到 Git；需要 GPU 模式时，建议在客户端“管理依赖”里在线安装，或在离线发布环境中手动准备。
+
+发布 runtime assets：
+
+```powershell
+.\packaging\package-runtime-assets.ps1 -Clean
+```
+
+该脚本会从 `vendor/ollama-windows-amd64-cpu-0.20.2/` 和 `vendor/ollama-windows-amd64-gpu-nvidia-0.20.2/` 生成 release 附件。GPU 运行时会拆成多个 zip，避免单个 GitHub Release 附件过大。
 
 ### 图标文件
 

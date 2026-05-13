@@ -73,7 +73,7 @@ private-note/
 ├─ stop.bat                # Windows 双击停止
 ├─ justfile                # 常用命令封装
 ├─ pyproject.toml          # Python 依赖定义
-├─ vendor/                 # 本地运行时依赖目录，源码仓库不跟踪
+├─ vendor/                 # 固定 Python 运行时；Ollama 本地包可选放这里
 ├─ runtime/                # 项目私有 Ollama 运行时目录，运行后生成
 ├─ data/                   # SQLite、Chroma、模型、日志等本地数据，运行后生成
 └─ .venv/                  # uv 创建的项目虚拟环境，源码仓库不跟踪
@@ -105,12 +105,20 @@ private-note/
 ### 环境要求
 
 - Windows x64
-- Python 3.10 及以上
-- `uv`
+- Windows x64
+- 源码仓库已内置固定 Python 运行时；只做源码调试时也可以使用自己的 Python 3.10+ 与 `uv`
 
 ### 源码运行
 
-源码仓库不会提交 `.venv/`、`vendor/`、`runtime/`、`data/` 等本地运行产物。首次拉取源码后，先安装 Python 依赖：
+源码仓库会提交打包用的固定 Python 环境：
+
+```text
+vendor/python-3.11.7-embed-amd64/
+```
+
+因此另一台 Windows x64 电脑 clone 后，可以直接使用 `run.bat` / `run.ps1` 启动，或使用 `packaging` 下的脚本重新打包。
+
+如果你想用普通源码开发环境，也可以用 `uv` 创建 `.venv/`：
 
 ```powershell
 uv sync
@@ -129,24 +137,23 @@ just sync
 just test
 ```
 
-> `run.bat` / `run.ps1` 面向带项目内置 Python 的本地发布环境，会查找 `vendor/python-3.11.7-embed-amd64/python.exe`。如果只是从 Git 拉源码且还没有准备 `vendor` 目录，请优先使用 `uv run python launcher_desktop.py`。
+> `run.bat` / `run.ps1` 会优先使用仓库内置的 `vendor/python-3.11.7-embed-amd64/python.exe`。
 
 ### 需要手动准备的依赖
 
 从源码仓库拉下来后，需要自己准备以下内容：
 
-- Python 3.10+：用于源码运行；Windows 官方 Python 一般自带 Tkinter。
-- `uv`：用于根据 `pyproject.toml` / `uv.lock` 创建 `.venv/` 并安装 `chromadb`、`psutil` 等 Python 依赖。
+- Python 3.10+：可选；仅当你不使用仓库内置 Python，而要自己用源码开发环境运行时需要。
+- `uv`：可选；用于根据 `pyproject.toml` / `uv.lock` 创建 `.venv/` 并安装依赖。
 - `just`：可选；只在使用 `just sync`、`just test`、`just build`、`just portable` 这些快捷命令时需要。
 - Ollama 运行时：可在客户端设置页的“管理依赖”里安装，也可以手动准备到 `runtime/` 或 `vendor/`。默认固定版本为 `0.20.2`，CPU 模式使用 `ollama-windows-amd64.zip`，GPU 模式还需要 `ollama-windows-amd64-mlx.zip`。
 - 本地模型：问答推荐轻量档 `qwen2.5:3b` 或默认档 `qwen2.5:7b`，向量推荐 `nomic-embed-text`。模型不会进入 Git，需要在客户端内安装，或通过 Ollama 手动拉取。
-- 内置 Python 运行时：仅当要使用 `run.bat` / `run.ps1` 或本地打包脚本时需要。目录应为 `vendor/python-3.11.7-embed-amd64/`，并包含 Tkinter、`chromadb`、`psutil`、`PyInstaller` 等运行/构建依赖。
+- 内置 Python 运行时：已随源码仓库提交，目录为 `vendor/python-3.11.7-embed-amd64/`，包含 Tkinter、`chromadb`、`psutil`、`PyInstaller` 等运行/构建依赖。
 
 这些目录和文件都属于本地环境或用户数据，已经由 `.gitignore` 排除：
 
 ```text
 .venv/
-vendor/
 runtime/
 data/notes.db
 data/chroma/
@@ -170,6 +177,7 @@ run.bat
 ```
 
 注意：这种方式要求已经准备好 `vendor/python-3.11.7-embed-amd64/`。
+当前源码仓库已包含该目录。
 
 ### 停止客户端
 
@@ -255,7 +263,12 @@ PrivateNoteDesktop/PrivateNoteDesktop.exe
 - 磁盘空间：模型文件通常较大，至少预留数 GB 空间；GPU 运行时和多模型场景需要更多空间。
 - GPU 依赖：CPU 模式不需要显卡；GPU 模式仅面向 NVIDIA 环境，并依赖本机显卡驱动可用。
 
-源码仓库不跟踪打包所需的 `vendor/` 运行时目录。如果需要在一台新机器上重新打包，请先准备 `vendor/python-3.11.7-embed-amd64/`，并确保其中已经安装 `chromadb`、`psutil`、`PyInstaller`；如需离线部署 Ollama，也可以准备 `vendor/ollama-windows-amd64-cpu-0.20.2/` 或 `vendor/ollama-windows-amd64-gpu-nvidia-0.20.2/`。
+源码仓库会跟踪打包所需的 `vendor/python-3.11.7-embed-amd64/`，所以新机器 clone 后可以直接重新打包。
+
+`vendor/` 中可能额外出现两个 Ollama 固定运行时目录：
+
+- `vendor/ollama-windows-amd64-cpu-0.20.2/`：CPU 版 Ollama 固定运行时。体积较小，可被打包脚本内置到便携包中，供客户端首次部署 CPU 模式时直接复制。
+- `vendor/ollama-windows-amd64-gpu-nvidia-0.20.2/`：GPU 版 Ollama 固定运行时，包含 CUDA / Vulkan / MLX 加速库。该目录体积很大，不跟踪到 Git；需要 GPU 模式时，建议在客户端“管理依赖”里在线安装，或在离线发布环境中手动准备。
 
 ### 图标文件
 

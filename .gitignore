@@ -23,7 +23,9 @@ data/client_ui_settings.json
 data/desktop_state.json
 
 runtime/
-vendor/
+vendor/*
+!vendor/python-3.11.7-embed-amd64/
+!vendor/python-3.11.7-embed-amd64/**
 tmp/
 tmp-launcher*.txt
 tmp-*.png

@@ -45,12 +45,6 @@ CHAT_PROMPT_TEMPLATE = """
 请开始回答：
 """
 
-STRUCTURED_FIELD_ALIASES = {
-    "\u6b4c\u624b": ("\u6b4c\u624b", "\u6f14\u5531", "\u539f\u5531", "\u8c01\u5531", "\u6f14\u5531\u8005"),
-    "\u4f5c\u8bcd": ("\u4f5c\u8bcd", "\u8bcd\u4f5c\u8005", "\u8bcd\u4f5c", "\u586b\u8bcd"),
-    "\u4f5c\u66f2": ("\u4f5c\u66f2", "\u66f2\u4f5c\u8005", "\u8c31\u66f2"),
-    "\u7f16\u66f2": ("\u7f16\u66f2", "\u7f16\u8005"),
-}
 QUESTION_STOP_CHARS = set("\u7684\u662f\u4e86\u5462\u5417\u554a\u5427\u4e48\u4ec0\u4e48\u8bf7\u95ee\u4e00\u4e0b\u544a\u8bc9\u6211\u8fd9\u90a3\u54ea\u51e0\u8c01\u591a\u5c11\u6709\u65e0\u548c\u4e0e\u53ca\u5e74\u6708\u65e5")
 
 
@@ -279,34 +273,6 @@ def _note_title(note: dict, fallback: str = "untitled note") -> str:
     return fallback
 
 
-def _parse_structured_fields(content: str) -> dict[str, str]:
-    fields: dict[str, str] = {}
-    for line in content.splitlines()[:12]:
-        stripped = line.strip()
-        if not stripped or ("\uff1a" not in stripped and ":" not in stripped):
-            continue
-        key, value = re.split(r"\s*[:\uff1a]\s*", stripped, maxsplit=1)
-        normalized_key = key.strip()
-        normalized_value = value.strip()
-        if not normalized_key or not normalized_value:
-            continue
-        for canonical, aliases in STRUCTURED_FIELD_ALIASES.items():
-            if normalized_key == canonical or normalized_key in aliases:
-                fields[canonical] = normalized_value
-                break
-    return fields
-
-
-def _detect_question_field(question: str) -> str | None:
-    normalized = question.replace(" ", "")
-    for canonical, aliases in STRUCTURED_FIELD_ALIASES.items():
-        if canonical in normalized:
-            return canonical
-        if any(alias in normalized for alias in aliases):
-            return canonical
-    return None
-
-
 def _find_title_matched_notes(question: str, notes: list[dict]) -> list[dict]:
     normalized_question = question.replace(" ", "").lower()
     matches: list[tuple[int, int, dict]] = []
@@ -455,40 +421,11 @@ def _build_answer_sources(question: str, context_notes: list[dict], query_hits: 
     return [source_candidates[0][1]]
 
 
-def _try_structured_answer(question: str, notes: list[dict]) -> str | None:
-    target_field = _detect_question_field(question)
-    if target_field is None:
-        return None
-
-    matched_notes = _find_title_matched_notes(question, notes)
-    if not matched_notes:
-        return None
-
-    for note in matched_notes:
-        content = _note_document(str(note.get("title") or ""), str(note.get("body") or note.get("content") or ""))
-        fields = _parse_structured_fields(content)
-        value = fields.get(target_field)
-        if value:
-            title = _note_title(note, f"note {note['id']}")
-            return f"{title} \u7684 {target_field} \u662f {value}\u3002"
-    return None
-
-
 def ask_question(question: str) -> dict[str, object]:
     launcher_core.ensure_ollama_running()
     init_runtime_settings()
     runtime_profile = launcher_core.get_saved_runtime_profile()
     notes = list_note_items()
-
-    structured_answer = _try_structured_answer(question, notes)
-    if structured_answer is not None:
-        matched_notes = _find_title_matched_notes(question, notes)[:1]
-        return {
-            "answer": structured_answer,
-            "model": get_llm_model(),
-            "runtime_profile": runtime_profile,
-            "sources": _build_answer_sources(question, matched_notes, [], limit=1),
-        }
 
     query_embedding = embed_text(question)
     query_hits = query_chunks(query_embedding, top_k=8)

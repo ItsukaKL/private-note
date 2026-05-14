@@ -3714,6 +3714,15 @@ class DesktopClient:
                 )
                 chat_visual["bubble"].text_widget.tag_raise("sel")
                 chat_visual["meta"].configure(bg=self.palette.panel_alt, fg=self.palette.muted)
+                for source_visual in chat_visual.get("sources", []):
+                    if not source_visual["wrap"].winfo_exists():
+                        continue
+                    source_visual["wrap"].configure(bg=self.palette.panel_alt)
+                    source_visual["title_label"].configure(bg=self.palette.panel_alt, fg=self.palette.muted)
+                    source_visual["card"].configure(bg=self.palette.panel_bg, highlightbackground=self.palette.border)
+                    source_visual["source_title"].configure(bg=self.palette.panel_bg, fg=self.palette.text)
+                    if source_visual.get("snippet_label") is not None:
+                        source_visual["snippet_label"].configure(bg=self.palette.panel_bg, fg=self.palette.muted)
 
     def render_chat_history(self) -> None:
         self.chat_area.clear()
@@ -3811,6 +3820,7 @@ class DesktopClient:
                 justify="right" if is_user else "left",
             )
             meta.pack(anchor="e" if is_user else "w", pady=(6, 0))
+            source_visuals: list[dict[str, object]] = []
             if not is_user:
                 sources = item.get("sources") or []
                 if isinstance(sources, list) and sources:
@@ -3848,6 +3858,7 @@ class DesktopClient:
                         )
                         source_title.pack(anchor="w")
                         snippet = str(source.get("snippet") or "")
+                        source_snippet = None
                         if snippet:
                             source_snippet = tk.Label(
                                 source_card,
@@ -3867,6 +3878,15 @@ class DesktopClient:
                             style="GhostSmall.TButton",
                         )
                         source_button.pack(anchor="w", pady=(8, 0))
+                        source_visuals.append(
+                            {
+                                "wrap": sources_wrap,
+                                "title_label": sources_title,
+                                "card": source_card,
+                                "source_title": source_title,
+                                "snippet_label": source_snippet,
+                            }
+                        )
             self.chat_visuals.append(
                 {
                     "is_user": is_user,
@@ -3876,6 +3896,7 @@ class DesktopClient:
                     "avatar": avatar,
                     "bubble": bubble,
                     "meta": meta,
+                    "sources": source_visuals,
                 }
             )
 

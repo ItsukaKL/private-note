@@ -23,6 +23,13 @@ _model_list_cache: dict[str, object] = {
 }
 
 
+def _keep_alive_request_value() -> int | str:
+    value = str(launcher_core.OLLAMA_MODEL_KEEP_ALIVE).strip()
+    if value.lstrip("-").isdigit():
+        return int(value)
+    return value
+
+
 def _ensure_settings_dir() -> None:
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
 
@@ -188,7 +195,7 @@ def set_embed_model(model_name: str) -> str:
 
 
 def embed_text(text: str) -> list[float]:
-    payload = {"model": _runtime_settings["embed_model"], "prompt": text, "keep_alive": launcher_core.OLLAMA_MODEL_KEEP_ALIVE}
+    payload = {"model": _runtime_settings["embed_model"], "prompt": text, "keep_alive": _keep_alive_request_value()}
     response = _post_json("/api/embeddings", payload, timeout=120.0)
     if "embedding" in response:
         return response["embedding"]
@@ -202,7 +209,7 @@ def generate_text(prompt: str) -> str:
         "model": get_llm_model(),
         "prompt": prompt,
         "stream": False,
-        "keep_alive": launcher_core.OLLAMA_MODEL_KEEP_ALIVE,
+        "keep_alive": _keep_alive_request_value(),
         "options": {
             "temperature": 0,
         },

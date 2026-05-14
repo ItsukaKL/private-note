@@ -71,6 +71,6 @@ def test_generate_and_embedding_requests_keep_models_alive(repo_modules, monkeyp
     client.generate_text("prompt")
 
     assert captured[0]["path"] == "/api/embeddings"
-    assert captured[0]["payload"]["keep_alive"] == "-1"
+    assert captured[0]["payload"]["keep_alive"] == -1
     assert captured[1]["path"] == "/api/generate"
-    assert captured[1]["payload"]["keep_alive"] == "-1"
+    assert captured[1]["payload"]["keep_alive"] == -1

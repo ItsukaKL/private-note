@@ -142,6 +142,49 @@ def test_ask_question_returns_sources(repo_modules, monkeypatch):
     assert "RAG" in first_source["snippet"]
 
 
+def test_chat_prompt_requires_note_bound_answers(repo_modules):
+    note_service = repo_modules.note_service
+
+    prompt = note_service.CHAT_PROMPT_TEMPLATE
+
+    assert "只允许使用 [已知信息] 中明确出现" in prompt
+    assert "不允许补充外部知识" in prompt
+    assert "如果输出“未找到相关信息”，不要再添加任何解释、建议或步骤" in prompt
+
+
+def test_ask_question_sanitizes_not_found_with_extra_advice(repo_modules, monkeypatch):
+    note_service = repo_modules.note_service
+    db = repo_modules.db
+
+    monkeypatch.setattr(note_service.launcher_core, "ensure_ollama_running", lambda: None)
+    monkeypatch.setattr(note_service, "init_runtime_settings", lambda: None)
+    monkeypatch.setattr(note_service.launcher_core, "get_saved_runtime_profile", lambda: "gpu")
+    monkeypatch.setattr(note_service, "get_llm_model", lambda: "qwen2:7b")
+    monkeypatch.setattr(note_service, "embed_text", lambda text: [1.0])
+
+    note_id = db.insert_note("Git 撤销", "撤销最后一次提交但保留所有改动：git reset --soft HEAD~1", "alice")
+    monkeypatch.setattr(
+        note_service,
+        "query_chunks",
+        lambda embedding, top_k: [
+            {
+                "document": "撤销最后一次提交但保留所有改动：git reset --soft HEAD~1",
+                "distance": 0.1,
+                "metadata": {"note_id": note_id, "chunk_index": 0},
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        note_service,
+        "generate_text",
+        lambda prompt: "未找到相关信息。建议使用 git commit --amend 修改提交说明。",
+    )
+
+    payload = note_service.ask_question("上一次提交说明写错了，怎么处理？")
+
+    assert payload["answer"] == note_service.NOT_FOUND_ANSWER
+
+
 def test_ask_question_filters_unrelated_sources(repo_modules, monkeypatch):
     note_service = repo_modules.note_service
     db = repo_modules.db

@@ -11,7 +11,7 @@ Private Note Desktop 是一个基于本地笔记的桌面端 RAG 知识助手。
 - 本地创建、编辑、删除笔记
 - 保存笔记后自动切块、向量化并写入 Chroma
 - 基于本地笔记内容进行问答
-- 结构化字段优先命中，减少答非所问
+- 基于笔记检索上下文回答，减少答非所问
 - 设置页热切换对话模型
 - 客户端内置运行时诊断、日志查看
 - 支持项目私有 Ollama 运行时与项目私有模型目录
@@ -28,7 +28,7 @@ Private Note Desktop 是一个基于本地笔记的桌面端 RAG 知识助手。
 
 - `note_service.py`
   - 核心业务收口层
-  - 负责笔记 CRUD、结构化字段提取、检索上下文组织、问答入口
+  - 负责笔记 CRUD、检索上下文组织、问答入口
 
 ### 数据层
 
@@ -52,7 +52,7 @@ Private Note Desktop 是一个基于本地笔记的桌面端 RAG 知识助手。
 
 1. 用户在桌面客户端中编辑笔记
 2. `note_service.py` 调用 `db.py` 落 SQLite，同时调用 `text_splitter.py`、`ollama_client.py`、`chroma_store.py` 更新向量索引
-3. 用户提问时，`note_service.py` 先做结构化字段命中，再做向量召回与上下文拼装
+3. 用户提问时，`note_service.py` 执行向量召回、上下文筛选与拼装
 4. `ollama_client.py` 通过当前生效的 Ollama 运行时生成答案
 5. 设置页通过 `launcher_core.py` 管理私有运行时、模型目录和日志
 
@@ -87,7 +87,7 @@ private-note/
 
 ### 2. 笔记与检索服务
 
-`note_service.py` 负责笔记增删改查、问答前的检索组织，以及结构化字段优先命中。像“歌手 / 作词 / 作曲 / 编曲”这类问题会优先尝试直接从笔记字段提取，避免模型在混杂上下文中答偏。
+`note_service.py` 负责笔记增删改查、问答前的检索组织，以及对生成回答的笔记边界约束。系统会优先筛选和问题相关的笔记上下文，避免模型在混杂上下文中答偏。
 
 ### 3. 私有运行时管理
 
@@ -150,10 +150,47 @@ just test
 - 本地模型：问答推荐轻量档 `qwen2.5:3b` 或默认档 `qwen2.5:7b`，向量推荐 `nomic-embed-text`。模型不会进入 Git，需要在客户端内安装，或通过 Ollama 手动拉取。
 - 内置 Python 运行时：已随源码仓库提交，目录为 `vendor/python-3.11.7-embed-amd64/`，包含 Tkinter、`chromadb`、`psutil`、`PyInstaller` 等运行/构建依赖。
 
+### 新机器源码打包
+
+新机器只需要准备 Python 3.10+ 和网络。打包脚本会优先使用 `uv.lock` / `pyproject.toml` 创建项目本地 `.venv/`，并在 `.venv` 里安装固定版本的 `chromadb`、`psutil`、`PyInstaller` 等依赖，不会污染系统 Python：
+
+```powershell
+.\packaging\build.ps1
+```
+
+如果系统里没有安装 `uv`，脚本会自动在 `.build-tools/uv/` 里创建一个只属于本项目的 uv 启动环境，然后继续执行 `uv sync --locked --group dev`。
+
+也可以显式指定源码构建环境：
+
+```powershell
+.\packaging\build.ps1 -Environment uv
+```
+
+只有在完全离线、并且已经手动准备好 `vendor/python-3.11.7-embed-amd64/` 时，才需要使用内置 Python 方案：
+
+```powershell
+.\packaging\build.ps1 -Environment vendor
+```
+
+如果要把一套已经验证过的内置 Python 作为离线包保存，可以用：
+
+```powershell
+.\packaging\package-vendored-python.ps1
+```
+
+在新机器上恢复离线包：
+
+```powershell
+.\packaging\prepare-vendored-python.ps1 -ArchivePath 路径\PrivateNote-vendored-python-3.11.7-win-x64.zip
+```
+
+离线包方案只是备用路径；常规源码打包推荐直接用 `build.ps1` 的 uv 锁文件流程。
+
 这些目录和文件都属于本地环境或用户数据，已经由 `.gitignore` 排除：
 
 ```text
 .venv/
+.build-tools/
 runtime/
 data/notes.db
 data/chroma/
@@ -201,6 +238,18 @@ stop.bat
 
 ```powershell
 .\packaging\build.ps1
+```
+
+该命令会根据源码中的 `uv.lock` 自动准备 `.venv/` 并使用固定依赖打包。如果要强制使用 uv 锁文件环境：
+
+```powershell
+.\packaging\build.ps1 -Environment uv
+```
+
+如果已经准备了离线内置 Python，也可以强制使用：
+
+```powershell
+.\packaging\build.ps1 -Environment vendor
 ```
 
 或使用：
@@ -318,9 +367,8 @@ packaging/assets/app.ico
 
 1. 在主界面右侧输入问题
 2. 点击“发送”
-3. 系统优先尝试结构化字段命中
-4. 若未命中，则执行向量检索并组织上下文
-5. 调用当前生效的 Ollama 运行时生成回答
+3. 系统执行向量检索并组织上下文
+4. 调用当前生效的 Ollama 运行时生成回答
 
 ### 模型切换
 
@@ -334,7 +382,7 @@ packaging/assets/app.ico
 - 当前版本明确放弃浏览器入口，只保留桌面客户端交互
 - 关闭窗口时会顺带清理项目自管的后台残留进程
 - 设置页保留“诊断台”定位，但进一步承担私有运行时管理
-- 问答链路采用“结构化字段优先 + 检索补充”的策略，减少答非所问
+- 问答链路采用“检索上下文 + 严格回答规则”的策略，减少答非所问
 - 私有 Ollama 与私有模型目录会逐步替代系统共享运行时
 
 ## 当前限制

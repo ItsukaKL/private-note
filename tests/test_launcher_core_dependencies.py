@@ -176,6 +176,34 @@ def test_extract_zip_extracts_valid_archive(tmp_path):
     assert (tmp_path / "out" / "ollama.exe").read_text(encoding="utf-8") == "ok"
 
 
+def test_install_gpu_acceleration_downloads_all_gpu_accel_archives(monkeypatch, tmp_path):
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(launcher_core, "gpu_runtime_core_installed", lambda: True)
+    monkeypatch.setattr(launcher_core, "get_bundled_ollama_source_dir", lambda profile: None)
+    monkeypatch.setattr(launcher_core, "get_private_ollama_dir", lambda profile=None: tmp_path / "ollama-gpu")
+
+    def fake_download_runtime_assets_to_dir(**kwargs):
+        captured.update(kwargs)
+        return "downloaded"
+
+    monkeypatch.setattr(launcher_core, "_download_runtime_assets_to_dir", fake_download_runtime_assets_to_dir)
+
+    source = launcher_core.install_gpu_acceleration()
+
+    version = launcher_core.OLLAMA_RUNTIME_VERSION
+    assert source == "downloaded"
+    assert [item["filename"] for item in captured["assets"]] == [
+        f"PrivateNote-ollama-gpu-cuda-v12-core-{version}.zip",
+        f"PrivateNote-ollama-gpu-cuda-v12-deps-{version}.zip",
+        f"PrivateNote-ollama-gpu-cuda-v13-{version}.zip",
+        f"PrivateNote-ollama-gpu-mlx-cuda-v13-{version}.zip",
+        f"PrivateNote-ollama-gpu-vulkan-{version}.zip",
+    ]
+    assert captured["required_files"] == launcher_core.GPU_ACCELERATION_REQUIRED_FILES
+    assert captured["merge"] is True
+
+
 def test_import_system_models_into_private_store_adds_missing_files_incrementally(monkeypatch, tmp_path):
     source_root = tmp_path / "system-models"
     target_root = tmp_path / "private-models"

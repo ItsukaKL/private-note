@@ -26,8 +26,11 @@ from ollama_client import embed_text, generate_text, get_llm_model, init_runtime
 from text_splitter import split_text
 
 
+NOT_FOUND_ANSWER = "未找到相关信息。"
+
+
 CHAT_PROMPT_TEMPLATE = """
-你是一个严格基于用户笔记回答问题的助手。
+你是 Private Note 的本地笔记问答助手。你只能根据 [已知信息] 回答。
 
 [已知信息]
 {context}
@@ -36,11 +39,12 @@ CHAT_PROMPT_TEMPLATE = """
 {question}
 
 [回答规则]
-1. 只能使用已知信息中的内容回答。
-2. 不要使用外部知识或自行推断。
-3. 如果已知信息中没有明确答案，就回答：未找到相关信息。
-4. 优先保证准确，不追求扩写。
-5. 回答尽量简洁清晰。
+1. 只允许使用 [已知信息] 中明确出现的事实、步骤、命令、路径和文件名。
+2. 不允许补充外部知识，不允许根据常识扩展，不允许推荐笔记中没有出现的命令。
+3. 如果 [已知信息] 只能部分回答问题，就先说“根据笔记只能确认：”，然后只回答能确认的部分。
+4. 如果 [已知信息] 完全不能回答问题，只输出：未找到相关信息。
+5. 如果输出“未找到相关信息”，不要再添加任何解释、建议或步骤。
+6. 回答要简洁，优先列出可直接执行的命令或步骤。
 
 请开始回答：
 """
@@ -344,6 +348,15 @@ def _format_context(notes: list[dict]) -> str:
     return "\n\n".join(blocks)
 
 
+def _sanitize_generated_answer(answer: str) -> str:
+    normalized = str(answer or "").strip()
+    if not normalized:
+        return ""
+    if "未找到相关信息" in normalized:
+        return NOT_FOUND_ANSWER
+    return normalized
+
+
 def _question_terms(question: str) -> list[str]:
     raw_terms = re.findall(r"[a-z0-9_]{2,}|[\u4e00-\u9fff]{2,}", str(question or "").lower())
     seen: set[str] = set()
@@ -433,14 +446,14 @@ def ask_question(question: str) -> dict[str, object]:
     context = _format_context(context_notes)
     if not context.strip():
         return {
-            "answer": "\u672a\u627e\u5230\u76f8\u5173\u4fe1\u606f\u3002",
+            "answer": NOT_FOUND_ANSWER,
             "model": get_llm_model(),
             "runtime_profile": runtime_profile,
             "sources": [],
         }
 
     prompt = CHAT_PROMPT_TEMPLATE.format(context=context, question=question)
-    answer = generate_text(prompt)
+    answer = _sanitize_generated_answer(generate_text(prompt))
     return {
         "answer": answer,
         "model": get_llm_model(),

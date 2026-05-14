@@ -114,6 +114,14 @@ def test_install_managed_dependency_gpu_only_installs_missing_accel(monkeypatch)
     assert called == ["gpu-accel"]
 
 
+def test_private_ollama_env_keeps_models_loaded(monkeypatch):
+    monkeypatch.setattr(launcher_core, "OLLAMA_MODEL_KEEP_ALIVE", "-1")
+
+    env = launcher_core._private_ollama_env()
+
+    assert env["OLLAMA_KEEP_ALIVE"] == "-1"
+
+
 def test_list_managed_dependencies_reports_partial_gpu_runtime(monkeypatch):
     monkeypatch.setattr(
         launcher_core,

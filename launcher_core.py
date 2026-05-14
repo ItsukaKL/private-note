@@ -33,6 +33,7 @@ OLLAMA_LIBRARY_BASE_URL = os.getenv("OLLAMA_LIBRARY_BASE_URL", "https://ollama.c
 SYSTEM_OLLAMA_APP_PATH = Path.home() / "AppData" / "Local" / "Programs" / "Ollama" / "ollama app.exe"
 OLLAMA_RUNTIME_VERSION = "0.20.2"
 PROJECT_RELEASE_RUNTIME_VERSION = "0.1.5"
+OLLAMA_MODEL_KEEP_ALIVE = os.getenv("PRIVATE_NOTE_OLLAMA_KEEP_ALIVE", os.getenv("OLLAMA_KEEP_ALIVE", "-1"))
 OLLAMA_RUNTIME_RELEASE_BASE_URL = os.getenv(
     "OLLAMA_RUNTIME_RELEASE_BASE_URL",
     f"https://github.com/ItsukaKL/private-note/releases/latest/download",
@@ -550,6 +551,7 @@ def _private_ollama_env() -> dict[str, str]:
     env = os.environ.copy()
     env["OLLAMA_HOST"] = f"{PRIVATE_OLLAMA_HOST}:{PRIVATE_OLLAMA_PORT}"
     env["OLLAMA_MODELS"] = str(PRIVATE_OLLAMA_MODELS_DIR)
+    env["OLLAMA_KEEP_ALIVE"] = OLLAMA_MODEL_KEEP_ALIVE
     return env
 
 

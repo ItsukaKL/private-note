@@ -188,7 +188,7 @@ def set_embed_model(model_name: str) -> str:
 
 
 def embed_text(text: str) -> list[float]:
-    payload = {"model": _runtime_settings["embed_model"], "prompt": text}
+    payload = {"model": _runtime_settings["embed_model"], "prompt": text, "keep_alive": launcher_core.OLLAMA_MODEL_KEEP_ALIVE}
     response = _post_json("/api/embeddings", payload, timeout=120.0)
     if "embedding" in response:
         return response["embedding"]
@@ -202,6 +202,7 @@ def generate_text(prompt: str) -> str:
         "model": get_llm_model(),
         "prompt": prompt,
         "stream": False,
+        "keep_alive": launcher_core.OLLAMA_MODEL_KEEP_ALIVE,
         "options": {
             "temperature": 0,
         },

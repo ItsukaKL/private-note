@@ -52,3 +52,25 @@ def test_model_lists_do_not_cross_fill_missing_model_types(repo_modules, monkeyp
 
     assert client.list_chat_models() == []
     assert client.list_embedding_models() == ["nomic-embed-text:latest"]
+
+
+def test_generate_and_embedding_requests_keep_models_alive(repo_modules, monkeypatch):
+    import ollama_client
+
+    client = importlib.reload(ollama_client)
+    captured: list[dict[str, object]] = []
+
+    def fake_post_json(path: str, payload: dict, *, timeout: float) -> dict:
+        captured.append({"path": path, "payload": dict(payload), "timeout": timeout})
+        return {"response": "ok", "embedding": [1.0]}
+
+    monkeypatch.setattr(client, "_post_json", fake_post_json)
+    monkeypatch.setattr(client.launcher_core, "OLLAMA_MODEL_KEEP_ALIVE", "-1")
+
+    client.embed_text("hello")
+    client.generate_text("prompt")
+
+    assert captured[0]["path"] == "/api/embeddings"
+    assert captured[0]["payload"]["keep_alive"] == "-1"
+    assert captured[1]["path"] == "/api/generate"
+    assert captured[1]["payload"]["keep_alive"] == "-1"

@@ -148,6 +148,7 @@ just test
 - `just`：可选；只在使用 `just sync`、`just test`、`just build`、`just portable` 这些快捷命令时需要。
 - Ollama 运行时：可在客户端设置页的“管理依赖”里安装，也可以手动准备到 `runtime/` 或 `vendor/`。默认固定版本为 `0.20.2`，客户端默认从本项目 GitHub Release assets 下载 CPU/GPU 运行时分包，不再直接依赖 Ollama 上游 release 地址。
 - 本地模型：问答推荐轻量档 `qwen2.5:3b` 或默认档 `qwen2.5:7b`，向量推荐 `nomic-embed-text`。模型不会进入 Git，需要在客户端内安装，或通过 Ollama 手动拉取。
+- 模型保活：私有 Ollama 默认使用 `OLLAMA_KEEP_ALIVE=-1`，模型会随项目私有 Ollama 保持加载；关闭项目或在设置页停止 Ollama 后释放。
 - 内置 Python 运行时：已随源码仓库提交，目录为 `vendor/python-3.11.7-embed-amd64/`，包含 Tkinter、`chromadb`、`psutil`、`PyInstaller` 等运行/构建依赖。
 
 ### 新机器源码打包
@@ -312,6 +313,7 @@ PrivateNoteDesktop/PrivateNoteDesktop.exe
 - 磁盘空间：模型文件通常较大，至少预留数 GB 空间；GPU 运行时和多模型场景需要更多空间。
 - GPU 依赖：CPU 模式不需要显卡；GPU 模式仅面向 NVIDIA 环境，并依赖本机显卡驱动可用。
 - 运行时下载源：默认使用本项目 release assets；如需自建镜像，可通过 `OLLAMA_RUNTIME_RELEASE_BASE_URL` 覆盖为兼容的 asset 基础 URL。
+- 模型保活：默认会让 embedding 模型和对话模型在私有 Ollama 进程存活期间保持加载；关闭客户端或点击“停止 Ollama”会释放。
 
 源码仓库会跟踪打包所需的 `vendor/python-3.11.7-embed-amd64/`，所以新机器 clone 后可以直接重新打包。
 
